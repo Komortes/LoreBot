@@ -1,5 +1,3 @@
-using Pgvector;
-
 namespace LoreBot.Core.Models;
 
 public class Document
@@ -13,6 +11,6 @@ public class Document
     public string ChunkText { get; set; } = string.Empty;
     public int ChunkIndex { get; set; }
     public int TokenCount { get; set; }
-    public Vector? Embedding { get; set; }
+    public float[]? Embedding { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
