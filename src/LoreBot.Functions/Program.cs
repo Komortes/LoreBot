@@ -1,5 +1,7 @@
 using LoreBot.Core.Abstractions;
 using LoreBot.Core.Configuration;
+using LoreBot.Core.GuardRails;
+using LoreBot.Core.Middleware;
 using LoreBot.Core.Services;
 using LoreBot.Infrastructure.Database;
 using LoreBot.Infrastructure.Database.Repositories;
@@ -11,6 +13,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OpenAI;
 
 var host = new HostBuilder()
@@ -40,16 +43,33 @@ var host = new HostBuilder()
         services.AddScoped<IndexingPipeline>();
         services.AddHttpClient<WikiScraper>();
 
-        services.AddSingleton<IChatClient>(_ =>
-            openAiClient.GetChatClient("gpt-4o-mini").AsIChatClient()
-                .AsBuilder()
-                .Build());
+        services.AddScoped<IRateLimitService>(sp =>
+            new RateLimitService(sp.GetRequiredService<AppDbContext>(), 10, 50, 200));
+        services.AddScoped<ICacheService, CacheService>();
+        services.AddSingleton<InputGuardRails>();
+        services.AddSingleton<OutputGuardRails>();
+
+        services.AddScoped<IChatClient>(sp =>
+        {
+            var inner = openAiClient.GetChatClient("gpt-4o-mini").AsIChatClient();
+            return inner.AsBuilder()
+                .Use(next => new RateLimitingChatClient(
+                    next, sp.GetRequiredService<IRateLimitService>(), () => "global"))
+                .Use(next => new GuardRailsChatClient(
+                    next,
+                    sp.GetRequiredService<InputGuardRails>(),
+                    sp.GetRequiredService<OutputGuardRails>(),
+                    sp.GetRequiredService<ILogger<GuardRailsChatClient>>()))
+                .UseLogging(sp.GetRequiredService<ILoggerFactory>())
+                .Build();
+        });
 
         services.AddScoped<IChatService>(sp => new ChatService(
             sp.GetRequiredService<IEmbeddingService>(),
             sp.GetRequiredService<IVectorSearchService>(),
             sp.GetRequiredService<IChatClient>(),
-            "JoJo's Bizarre Adventure"));
+            "JoJo's Bizarre Adventure",
+            sp.GetRequiredService<ICacheService>()));
     })
     .Build();
 

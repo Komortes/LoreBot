@@ -11,12 +11,14 @@ namespace LoreBot.Functions.Functions;
 public class ChatFunction
 {
     private readonly IChatService _chatService;
+    private readonly IRateLimitService _rateLimit;
     private readonly ILogger<ChatFunction> _logger;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public ChatFunction(IChatService chatService, ILogger<ChatFunction> logger)
+    public ChatFunction(IChatService chatService, IRateLimitService rateLimit, ILogger<ChatFunction> logger)
     {
         _chatService = chatService;
+        _rateLimit = rateLimit;
         _logger = logger;
     }
 
@@ -35,6 +37,24 @@ public class ChatFunction
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
             await bad.WriteStringAsync("universe and message are required");
             return bad;
+        }
+
+        var clientIp = req.Headers.TryGetValues("X-Forwarded-For", out var fwd)
+            ? fwd.First().Split(',')[0].Trim()
+            : "unknown";
+        var decision = await _rateLimit.CheckAndIncrementAsync(clientIp, executionContext.CancellationToken);
+        if (!decision.Allowed)
+        {
+            _logger.LogWarning("LoreBot.RateLimitHit ip={Ip} reason={Reason}", clientIp, decision.Reason);
+            var limited = req.CreateResponse(HttpStatusCode.OK);
+            await limited.WriteAsJsonAsync(new
+            {
+                answer = "Сервис временно перегружен. Попробуй через несколько минут.",
+                sources = Array.Empty<object>(),
+                tokensUsed = 0,
+                fromCache = false
+            });
+            return limited;
         }
 
         var sessionId = string.IsNullOrWhiteSpace(dto.SessionId) ? Guid.NewGuid().ToString() : dto.SessionId;
