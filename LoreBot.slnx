@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LoreBot.Core/LoreBot.Core.csproj" />
+    <Project Path="src/LoreBot.Evaluations/LoreBot.Evaluations.csproj" />
+    <Project Path="src/LoreBot.Functions/LoreBot.Functions.csproj" />
+    <Project Path="src/LoreBot.Infrastructure/LoreBot.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LoreBot.Core.Tests/LoreBot.Core.Tests.csproj" />
+    <Project Path="tests/LoreBot.Infrastructure.Tests/LoreBot.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>
