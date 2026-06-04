@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+publish/
+*.nupkg
+.env
+local.settings.json
+
+# Node / React
+node_modules/
+dist/
+.vite/
+*.local
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Azure Functions
+local.settings.json
+
+# Planning artifacts (local only)
+docs/superpowers/
+
+# macOS
+.DS_Store

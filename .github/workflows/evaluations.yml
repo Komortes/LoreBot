@@ -1,0 +1,11 @@
+# AI Quality Checks — see LOREBOT_SPEC.md
+name: AI Evaluations
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO - implement per plan"

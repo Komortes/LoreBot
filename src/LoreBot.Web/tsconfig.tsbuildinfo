@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/components/chatwindow.tsx","./src/components/messagebubble.tsx","./src/components/sourcecard.tsx","./src/components/universepicker.tsx","./src/hooks/usechat.test.ts","./src/hooks/usechat.ts"],"version":"5.8.3"}

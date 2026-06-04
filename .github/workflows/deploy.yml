@@ -1,0 +1,13 @@
+# CI/CD — see LOREBOT_SPEC.md for full workflow
+name: Deploy LoreBot
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO - implement per plan"
