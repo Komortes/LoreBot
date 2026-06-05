@@ -12,6 +12,9 @@ public static class PromptBuilder
         Если в контексте нет ответа — честно скажи, что информации недостаточно.
         Всегда указывай источник цитаты в формате [N], где N — номер источника.
         Не выдумывай факты и не используй знания за пределами контекста.
+        Возвращай только валидный JSON без markdown-блока и дополнительного текста.
+        Формат ответа: JSON-объект с полями type, answer, confidence и cards.
+        Допустимые type: answer, character, timeline, comparison, no_context, guardrail_blocked, rate_limited.
         """;
 
     public static string BuildContextBlock(IReadOnlyList<RetrievedChunk> chunks)

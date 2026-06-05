@@ -6,7 +6,15 @@ describe('useChat', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ answer: 'Дио — вампир', sources: [{ title: 'Dio', similarity: 0.9 }], tokensUsed: 10, fromCache: false }),
+      json: async () => ({
+        type: 'character',
+        answer: 'Дио — вампир',
+        sources: [{ title: 'Dio', similarity: 0.9 }],
+        confidence: 0.9,
+        cards: [{ type: 'character', title: 'Dio' }],
+        tokensUsed: 10,
+        fromCache: false,
+      }),
     }))
   })
 
@@ -17,6 +25,7 @@ describe('useChat', () => {
     expect(result.current.messages[0].role).toBe('user')
     expect(result.current.messages[1].role).toBe('assistant')
     expect(result.current.messages[1].text).toContain('вампир')
+    expect(result.current.messages[1].responseType).toBe('character')
     expect(result.current.messages[1].sources?.[0].title).toBe('Dio')
   })
 

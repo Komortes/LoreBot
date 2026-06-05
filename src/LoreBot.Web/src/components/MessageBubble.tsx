@@ -1,4 +1,5 @@
 import type { Message } from '../types'
+import { ResponseCards } from './ResponseCards'
 import { SourceCard } from './SourceCard'
 
 export function MessageBubble({ message }: { message: Message }) {
@@ -11,6 +12,9 @@ export function MessageBubble({ message }: { message: Message }) {
           : 'bg-gray-800 text-gray-100 rounded-bl-sm'
       }`}>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+        {!isUser && (
+          <ResponseCards responseType={message.responseType} cards={message.cards} />
+        )}
         {!isUser && message.sources && message.sources.length > 0 && (
           <div className="mt-3 flex flex-col gap-1">
             {message.sources.map((s, i) => <SourceCard key={i} source={s} index={i} />)}

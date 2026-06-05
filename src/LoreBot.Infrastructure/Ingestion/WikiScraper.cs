@@ -28,11 +28,61 @@ public class WikiScraper
 
     public async Task<(string Title, string Text)> GetPlainTextAsync(string apiUrl, string title, CancellationToken ct = default)
     {
-        var url = $"{apiUrl}?action=query&prop=extracts&explaintext=1&format=json&titles={Uri.EscapeDataString(title)}";
+        var url = $"{apiUrl}?action=parse&page={Uri.EscapeDataString(title)}&prop=wikitext&format=json";
         using var doc = JsonDocument.Parse(await _http.GetStringAsync(url, ct));
-        var page = doc.RootElement.GetProperty("query").GetProperty("pages").EnumerateObject().First().Value;
-        var extract = page.TryGetProperty("extract", out var ex) ? ex.GetString() ?? "" : "";
-        return (page.GetProperty("title").GetString()!, CleanWikitext(extract));
+        var root = doc.RootElement;
+        if (root.TryGetProperty("error", out _))
+            return (title, "");
+
+        if (TryReadParseResponse(root, title, out var parseTitle, out var wikitext))
+            return (parseTitle, CleanWikitext(wikitext));
+
+        if (TryReadQueryExtractResponse(root, title, out var extractTitle, out var extract))
+            return (extractTitle, CleanWikitext(extract));
+
+        return (title, "");
+    }
+
+    private static bool TryReadParseResponse(JsonElement root, string fallbackTitle, out string title, out string text)
+    {
+        title = fallbackTitle;
+        text = "";
+
+        if (!root.TryGetProperty("parse", out var parse))
+            return false;
+
+        if (parse.TryGetProperty("title", out var titleElement))
+            title = titleElement.GetString() ?? fallbackTitle;
+
+        if (!parse.TryGetProperty("wikitext", out var wikitext)
+            || !wikitext.TryGetProperty("*", out var textElement))
+            return false;
+
+        text = textElement.GetString() ?? "";
+        return true;
+    }
+
+    private static bool TryReadQueryExtractResponse(JsonElement root, string fallbackTitle, out string title, out string text)
+    {
+        title = fallbackTitle;
+        text = "";
+
+        if (!root.TryGetProperty("query", out var query)
+            || !query.TryGetProperty("pages", out var pages))
+            return false;
+
+        var page = pages.EnumerateObject().FirstOrDefault().Value;
+        if (page.ValueKind is JsonValueKind.Undefined)
+            return false;
+
+        if (page.TryGetProperty("title", out var titleElement))
+            title = titleElement.GetString() ?? fallbackTitle;
+
+        if (!page.TryGetProperty("extract", out var extractElement))
+            return false;
+
+        text = extractElement.GetString() ?? "";
+        return true;
     }
 
     public static string CleanWikitext(string raw)

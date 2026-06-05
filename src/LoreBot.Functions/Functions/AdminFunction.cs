@@ -27,7 +27,7 @@ public class AdminFunction
 
     [Function("AdminIndex")]
     public async Task<HttpResponseData> IndexAsync(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/index")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "manage/index")] HttpRequestData req,
         FunctionContext ctx)
     {
         if (!req.Headers.TryGetValues("x-admin-key", out var keys)
@@ -35,7 +35,23 @@ public class AdminFunction
             || string.IsNullOrEmpty(_options.AdminApiKey))
             return req.CreateResponse(HttpStatusCode.Unauthorized);
 
-        var dto = JsonSerializer.Deserialize<IndexRequest>(await req.ReadAsStringAsync() ?? "", Json)!;
+        IndexRequest? dto;
+        try
+        {
+            dto = JsonSerializer.Deserialize<IndexRequest>(await req.ReadAsStringAsync() ?? "", Json);
+        }
+        catch (JsonException)
+        {
+            dto = null;
+        }
+
+        if (dto is null || string.IsNullOrWhiteSpace(dto.Universe) || string.IsNullOrWhiteSpace(dto.WikiApiUrl))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("universe and wikiApiUrl are required");
+            return bad;
+        }
+
         var universe = await _db.Universes.FirstOrDefaultAsync(u => u.Slug == dto.Universe, ctx.CancellationToken);
         if (universe is null)
         {

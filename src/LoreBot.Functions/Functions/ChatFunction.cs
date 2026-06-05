@@ -49,8 +49,11 @@ public class ChatFunction
             var limited = req.CreateResponse(HttpStatusCode.OK);
             await limited.WriteAsJsonAsync(new
             {
+                type = "rate_limited",
                 answer = "Сервис временно перегружен. Попробуй через несколько минут.",
                 sources = Array.Empty<object>(),
+                confidence = (double?)null,
+                cards = Array.Empty<object>(),
                 tokensUsed = 0,
                 fromCache = false
             });
@@ -65,8 +68,11 @@ public class ChatFunction
         var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(new
         {
+            type = result.Type,
             answer = result.Answer,
             sources = result.Sources,
+            confidence = result.Confidence,
+            cards = result.Cards,
             tokensUsed = result.TokensUsed,
             fromCache = result.FromCache
         });

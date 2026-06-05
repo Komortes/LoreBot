@@ -25,6 +25,8 @@ var host = new HostBuilder()
         services.Configure<LoreBotOptions>(o =>
         {
             o.OpenAiApiKey = config["OPENAI_API_KEY"] ?? "";
+            o.DeepSeekApiKey = config["DEEPSEEK_API_KEY"] ?? "";
+            o.LlmProvider = config["LLM_PROVIDER"] ?? "openai";
             o.DatabaseConnectionString = config["DATABASE_CONNECTION_STRING"] ?? "";
             o.AdminApiKey = config["ADMIN_API_KEY"] ?? "";
         });
@@ -32,12 +34,38 @@ var host = new HostBuilder()
         services.AddDbContext<AppDbContext>(opt =>
             opt.UseNpgsql(config["DATABASE_CONNECTION_STRING"] ?? "", n => n.UseVector()));
 
-        var openAiClient = new OpenAIClient(config["OPENAI_API_KEY"] ?? "");
+        // Embeddings: use OpenAI if key is set, otherwise fall back to local hash-projection (dev only)
+        var openAiApiKey = config["OPENAI_API_KEY"] is { Length: > 0 } k ? k : null;
+        var openAiClient = openAiApiKey is not null ? new OpenAIClient(openAiApiKey) : null;
+        if (openAiClient is not null)
+        {
+            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(_ =>
+                openAiClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
+            services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
+        }
+        else
+        {
+            services.AddSingleton<IEmbeddingService, LocalEmbeddingService>();
+        }
 
-        services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(_ =>
-            openAiClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
+        // Chat client: DeepSeek or OpenAI based on LLM_PROVIDER
+        var llmProvider = config["LLM_PROVIDER"] ?? "openai";
+        var deepSeekKey = config["DEEPSEEK_API_KEY"] is { Length: > 0 } dk ? dk : null;
+        OpenAIClient chatOpenAiClient;
+        string chatModelName;
+        if (llmProvider.Equals("deepseek", StringComparison.OrdinalIgnoreCase) && deepSeekKey is not null)
+        {
+            chatOpenAiClient = new OpenAIClient(
+                new System.ClientModel.ApiKeyCredential(deepSeekKey),
+                new OpenAI.OpenAIClientOptions { Endpoint = new Uri("https://api.deepseek.com/v1") });
+            chatModelName = "deepseek-chat";
+        }
+        else
+        {
+            chatOpenAiClient = openAiClient ?? new OpenAIClient("sk-placeholder");
+            chatModelName = "gpt-4o-mini";
+        }
 
-        services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
         services.AddScoped<IVectorSearchService, VectorSearchService>();
         services.AddScoped<TextChunker>(_ => new TextChunker(512, 64));
         services.AddScoped<IndexingPipeline>();
@@ -51,7 +79,7 @@ var host = new HostBuilder()
 
         services.AddScoped<IChatClient>(sp =>
         {
-            var inner = openAiClient.GetChatClient("gpt-4o-mini").AsIChatClient();
+            var inner = chatOpenAiClient.GetChatClient(chatModelName).AsIChatClient();
             return inner.AsBuilder()
                 .Use(next => new RateLimitingChatClient(
                     next, sp.GetRequiredService<IRateLimitService>(), () => "global"))

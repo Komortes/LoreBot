@@ -1,6 +1,7 @@
 using LoreBot.Core.Abstractions;
 using LoreBot.Core.Models;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 namespace LoreBot.Core.Services;
 
@@ -15,6 +16,7 @@ public class ChatService : IChatService
     private const double MinSimilarity = 0.75;
     private const int TopK = 8;
     private const int ContextK = 5;
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public ChatService(IEmbeddingService embedder, IVectorSearchService search,
         IChatClient chat, string universeName, ICacheService? cache = null)
@@ -48,6 +50,7 @@ public class ChatService : IChatService
         {
             return new ChatResult
             {
+                Type = "no_context",
                 Answer = "В базе знаний нет информации по этому вопросу.",
                 Sources = new(),
                 TokensUsed = 0
@@ -63,14 +66,18 @@ public class ChatService : IChatService
 
         var response = await _chat.GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 800 }, ct);
         var tokens = (int)((response.Usage?.InputTokenCount ?? 0) + (response.Usage?.OutputTokenCount ?? 0));
+        var parsed = ParseModelResponse(response.Text);
 
         var finalResult = new ChatResult
         {
-            Answer = response.Text,
+            Type = parsed.Type,
+            Answer = parsed.Answer,
             Sources = filtered.Select(c => new Source
             {
                 Title = c.Title, Url = c.Url, Category = c.Category, Similarity = c.Similarity
             }).ToList(),
+            Confidence = parsed.Confidence,
+            Cards = parsed.Cards,
             TokensUsed = tokens
         };
 
@@ -78,5 +85,37 @@ public class ChatService : IChatService
             await _cache.SetAsync(universe, message, queryVector, finalResult, ct);
 
         return finalResult;
+    }
+
+    private static ParsedModelResponse ParseModelResponse(string text)
+    {
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<ParsedModelResponse>(text, Json);
+            if (parsed is not null && !string.IsNullOrWhiteSpace(parsed.Answer))
+            {
+                parsed.Type = NormalizeResponseType(parsed.Type);
+                parsed.Cards ??= new();
+                return parsed;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return new ParsedModelResponse { Type = "answer", Answer = text, Cards = new() };
+    }
+
+    private static string NormalizeResponseType(string? type) =>
+        type is "answer" or "character" or "timeline" or "comparison" or "no_context" or "guardrail_blocked" or "rate_limited"
+            ? type
+            : "answer";
+
+    private sealed class ParsedModelResponse
+    {
+        public string Type { get; set; } = "answer";
+        public string Answer { get; set; } = string.Empty;
+        public double? Confidence { get; set; }
+        public List<ChatCard> Cards { get; set; } = new();
     }
 }

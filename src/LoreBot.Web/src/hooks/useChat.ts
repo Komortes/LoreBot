@@ -22,7 +22,14 @@ export function useChat(universe: string) {
     setIsLoading(true)
     try {
       const res = await postChat(universe, text, sessionId.current)
-      setMessages(prev => [...prev, { role: 'assistant', text: res.answer, sources: res.sources }])
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: res.answer,
+        sources: res.sources,
+        responseType: res.type,
+        confidence: res.confidence,
+        cards: res.cards,
+      }])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {

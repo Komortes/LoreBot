@@ -38,24 +38,48 @@ public class VectorSearchService : IVectorSearchService
             var rows = await query
                 .OrderBy(d => d.Embedding!.CosineDistance(qv))
                 .Take(limit)
-                .Select(d => new { d.ChunkText, d.Title, d.Url, d.Category })
+                .Select(d => new
+                {
+                    d.ChunkText,
+                    d.Title,
+                    d.Url,
+                    d.Category,
+                    Distance = d.Embedding!.CosineDistance(qv)
+                })
                 .ToListAsync(ct);
             return rows.Select(r => new RetrievedChunk
             {
                 ChunkText = r.ChunkText, Title = r.Title, Url = r.Url,
-                Category = r.Category, Similarity = 1.0
+                Category = r.Category, Similarity = 1.0 - r.Distance
             }).ToList();
         }
         else
         {
             var rows = await query.Take(limit)
-                .Select(d => new { d.ChunkText, d.Title, d.Url, d.Category })
+                .Select(d => new { d.ChunkText, d.Title, d.Url, d.Category, d.Embedding })
                 .ToListAsync(ct);
-            return rows.Select(r => new RetrievedChunk
+            return rows
+                .Select(r => new RetrievedChunk
             {
                 ChunkText = r.ChunkText, Title = r.Title, Url = r.Url,
-                Category = r.Category, Similarity = 1.0
-            }).ToList();
+                Category = r.Category, Similarity = CosineSimilarity(queryVector, r.Embedding!)
+            })
+                .OrderByDescending(r => r.Similarity)
+                .Take(limit)
+                .ToList();
         }
+    }
+
+    private static double CosineSimilarity(float[] a, float[] b)
+    {
+        double dot = 0, magA = 0, magB = 0;
+        for (int i = 0; i < a.Length && i < b.Length; i++)
+        {
+            dot += a[i] * b[i];
+            magA += a[i] * a[i];
+            magB += b[i] * b[i];
+        }
+
+        return magA == 0 || magB == 0 ? 0 : dot / (Math.Sqrt(magA) * Math.Sqrt(magB));
     }
 }

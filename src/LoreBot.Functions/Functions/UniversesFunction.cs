@@ -18,7 +18,7 @@ public class UniversesFunction
     {
         var universes = await _db.Universes.AsNoTracking()
             .Where(u => u.IsActive)
-            .Select(u => new { u.Slug, u.Name, u.Description, u.WikiUrl })
+            .Select(u => new { slug = u.Slug, name = u.Name, description = u.Description, wikiUrl = u.WikiUrl })
             .ToListAsync(ctx.CancellationToken);
         var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(universes);

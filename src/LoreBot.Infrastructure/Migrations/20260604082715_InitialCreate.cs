@@ -139,10 +139,10 @@ namespace LoreBot.Infrastructure.Migrations
 
             migrationBuilder.Sql(
                 "CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents " +
-                "USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);");
+                "USING ivfflat (\"Embedding\" vector_cosine_ops) WITH (lists = 100);");
             migrationBuilder.Sql(
                 "CREATE INDEX IF NOT EXISTS idx_response_cache_vector ON response_cache " +
-                "USING ivfflat (question_vector vector_cosine_ops) WITH (lists = 50);");
+                "USING ivfflat (\"QuestionVector\" vector_cosine_ops) WITH (lists = 50);");
         }
 
         /// <inheritdoc />
