@@ -13,7 +13,11 @@ export function MessageBubble({ message }: { message: Message }) {
       }`}>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
         {!isUser && (
-          <ResponseCards responseType={message.responseType} cards={message.cards} />
+          <ResponseCards
+            responseType={message.responseType}
+            confidence={message.confidence}
+            cards={message.cards}
+          />
         )}
         {!isUser && message.sources && message.sources.length > 0 && (
           <div className="mt-3 flex flex-col gap-1">
