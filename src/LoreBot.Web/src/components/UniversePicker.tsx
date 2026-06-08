@@ -20,7 +20,8 @@ export function UniversePicker({ selected, onChange }: Props) {
     <select
       value={selected}
       onChange={e => onChange(e.target.value)}
-      className="bg-gray-800 text-gray-200 border border-gray-700 rounded-lg px-3 py-1 text-sm focus:outline-none focus:border-indigo-500"
+      aria-label="Universe"
+      className="max-w-64 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
     >
       {universes.map(u => (
         <option key={u.slug} value={u.slug}>{u.name}</option>
