@@ -22,14 +22,23 @@ var host = new HostBuilder()
     {
         var config = context.Configuration;
 
-        services.Configure<LoreBotOptions>(o =>
-        {
-            o.OpenAiApiKey = config["OPENAI_API_KEY"] ?? "";
-            o.DeepSeekApiKey = config["DEEPSEEK_API_KEY"] ?? "";
-            o.LlmProvider = config["LLM_PROVIDER"] ?? "openai";
-            o.DatabaseConnectionString = config["DATABASE_CONNECTION_STRING"] ?? "";
-            o.AdminApiKey = config["ADMIN_API_KEY"] ?? "";
-        });
+        services.AddOptions<LoreBotOptions>()
+            .Configure(o =>
+            {
+                o.OpenAiApiKey = config["OPENAI_API_KEY"] ?? "";
+                o.DeepSeekApiKey = config["DEEPSEEK_API_KEY"] ?? "";
+                o.LlmProvider = config["LLM_PROVIDER"] ?? "openai";
+                o.EmbeddingProvider = config["EMBEDDING_PROVIDER"] ?? "openai";
+                o.VectorStoreProvider = config["VECTOR_STORE_PROVIDER"] ?? "postgres";
+                o.LocalEmbeddingModelPath = config["LOCAL_EMBEDDING_MODEL_PATH"] ?? "";
+                o.RagDataPath = config["RAG_DATA_PATH"] ?? "";
+                o.DatabaseConnectionString = config["DATABASE_CONNECTION_STRING"] ?? "";
+                o.AdminApiKey = config["ADMIN_API_KEY"] ?? "";
+            })
+            .Validate(
+                options => options.Validate().Count == 0,
+                "Invalid LoreBot provider configuration. Check provider-specific environment variables.")
+            .ValidateOnStart();
 
         services.AddDbContext<AppDbContext>(opt =>
             opt.UseNpgsql(config["DATABASE_CONNECTION_STRING"] ?? "", n => n.UseVector()));
