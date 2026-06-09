@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using LoreBot.Core.Abstractions;
+using LoreBot.Core.Models;
 using LoreBot.Functions.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -63,7 +64,18 @@ public class ChatFunction
         var sessionId = string.IsNullOrWhiteSpace(dto.SessionId) ? Guid.NewGuid().ToString() : dto.SessionId;
         _logger.LogInformation("LoreBot.ChatRequest universe={Universe}", dto.Universe);
 
-        var result = await _chatService.ChatAsync(dto.Universe, dto.Message, sessionId, executionContext.CancellationToken);
+        ChatResult result;
+        try
+        {
+            result = await _chatService.ChatAsync(dto.Universe, dto.Message, sessionId, executionContext.CancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoreBot.ChatError universe={Universe}", dto.Universe);
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { type = "error", answer = "Произошла ошибка. Попробуй позже.", sources = Array.Empty<object>(), cards = Array.Empty<object>() });
+            return err;
+        }
 
         var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(new

@@ -48,4 +48,25 @@ public class CacheServiceTests
         var hit = await svc.TryGetAsync("jojo", query, minSimilarity: 0.95);
         Assert.Null(hit);
     }
+
+    [Fact]
+    public async Task SetAsync_DoesNotCreateDuplicate_ForSameQuestion()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"cache-dup-{Guid.NewGuid()}").Options;
+        using var ctx = new AppDbContext(options);
+        var universe = new Universe { Slug = "jojo", Name = "JoJo" };
+        ctx.Universes.Add(universe);
+        await ctx.SaveChangesAsync();
+
+        var svc = new CacheService(ctx);
+        var vector = new float[1536];
+        var result = new ChatResult { Answer = "answer", Sources = [] };
+
+        await svc.SetAsync("jojo", "same question", vector, result);
+        await svc.SetAsync("jojo", "same question", vector, result);
+
+        Assert.Equal(1, ctx.ResponseCache.Count());
+    }
+
 }

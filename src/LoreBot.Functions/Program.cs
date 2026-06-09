@@ -3,6 +3,8 @@ using LoreBot.Core.Configuration;
 using LoreBot.Core.GuardRails;
 using LoreBot.Core.Middleware;
 using LoreBot.Core.Services;
+using LoreBot.Core.Tools;
+using LoreBot.Functions.Middleware;
 using LoreBot.Infrastructure.Database;
 using LoreBot.Infrastructure.Database.Repositories;
 using LoreBot.Infrastructure.Ingestion;
@@ -15,6 +17,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenAI;
+using Azure.Monitor.OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
@@ -86,10 +91,22 @@ var host = new HostBuilder()
         services.AddSingleton<InputGuardRails>();
         services.AddSingleton<OutputGuardRails>();
 
+        // OpenTelemetry → Azure Monitor
+        var appInsightsConnStr = config["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+        services.AddOpenTelemetry()
+            .ConfigureResource(r => r.AddService("LoreBot"))
+            .WithTracing(b =>
+            {
+                b.AddSource("LoreBot").AddHttpClientInstrumentation();
+                if (!string.IsNullOrEmpty(appInsightsConnStr))
+                    b.AddAzureMonitorTraceExporter(o => o.ConnectionString = appInsightsConnStr);
+            });
+
         services.AddScoped<IChatClient>(sp =>
         {
             var inner = chatOpenAiClient.GetChatClient(chatModelName).AsIChatClient();
             return inner.AsBuilder()
+                .Use(next => new ObservabilityChatClient(next, "lorebot"))
                 .Use(next => new RateLimitingChatClient(
                     next, sp.GetRequiredService<IRateLimitService>(), () => "global"))
                 .Use(next => new GuardRailsChatClient(
@@ -101,12 +118,17 @@ var host = new HostBuilder()
                 .Build();
         });
 
+        services.AddScoped<LoreSearchTools>(sp => new LoreSearchTools(
+            sp.GetRequiredService<IEmbeddingService>(),
+            sp.GetRequiredService<IVectorSearchService>()));
+
         services.AddScoped<IChatService>(sp => new ChatService(
             sp.GetRequiredService<IEmbeddingService>(),
             sp.GetRequiredService<IVectorSearchService>(),
             sp.GetRequiredService<IChatClient>(),
             "JoJo's Bizarre Adventure",
-            sp.GetRequiredService<ICacheService>()));
+            sp.GetRequiredService<ICacheService>(),
+            sp.GetRequiredService<LoreSearchTools>()));
     })
     .Build();
 

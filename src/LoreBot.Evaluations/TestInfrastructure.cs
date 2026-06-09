@@ -63,6 +63,31 @@ public static class TestInfrastructure
                 });
             }
 
+            if (universe == "chainsaw_man" && lower.Contains("дэндзи"))
+            {
+                return Task.FromResult(new ChatResult
+                {
+                    Type = "character",
+                    Answer = "Дэндзи — главный герой, объединившийся с дьяволом бензопилы Почитой. Он обрёл способности Chainsaw Devil [1].",
+                    Confidence = 0.88,
+                    Sources =
+                    [
+                        new Source
+                        {
+                            Title = "Denji",
+                            Url = "https://chainsaw-man.fandom.com/wiki/Denji",
+                            Category = "character",
+                            Similarity = 0.91
+                        }
+                    ],
+                    Cards =
+                    [
+                        new ChatCard { Type = "character", Title = "Denji", Body = "Chainsaw Devil hybrid" }
+                    ],
+                    TokensUsed = 110
+                });
+            }
+
             return Task.FromResult(new ChatResult
             {
                 Type = "no_context",

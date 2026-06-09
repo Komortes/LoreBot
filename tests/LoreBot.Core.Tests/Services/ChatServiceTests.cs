@@ -56,4 +56,23 @@ public class ChatServiceTests
         await chat.DidNotReceive().GetResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ChatAsync_UsesUniverseSlugInSystemPrompt()
+    {
+        var chunks = new List<RetrievedChunk>
+        {
+            new() { Title = "Joker", Url = "https://persona/Joker", ChunkText = "protagonist", Category = "character", Similarity = 0.9 }
+        };
+        var (svc, chat) = Build("ответ", chunks);
+
+        await svc.ChatAsync("persona", "Кто такой Джокер?", "s1");
+
+        await chat.Received(1).GetResponseAsync(
+            Arg.Is<IEnumerable<ChatMessage>>(msgs =>
+                msgs.Any(m => m.Role == ChatRole.System && m.Text != null && m.Text.Contains("persona"))),
+            Arg.Any<ChatOptions?>(),
+            Arg.Any<CancellationToken>());
+    }
+
 }

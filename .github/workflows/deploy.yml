@@ -1,13 +1,104 @@
-# CI/CD — see LOREBOT_SPEC.md for full workflow
 name: Deploy LoreBot
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
 jobs:
-  placeholder:
+  build-and-test:
+    name: Build + Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "TODO - implement per plan"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Unit tests
+        run: dotnet test tests/LoreBot.Core.Tests tests/LoreBot.Infrastructure.Tests --no-build -c Release
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/LoreBot.Web/package-lock.json
+
+      - name: Install
+        run: cd src/LoreBot.Web && npm ci
+
+      - name: Lint
+        run: cd src/LoreBot.Web && npm run lint
+
+      - name: Test
+        run: cd src/LoreBot.Web && npm test
+
+      - name: Build
+        run: cd src/LoreBot.Web && npm run build
+
+  deploy-functions:
+    name: Deploy Azure Functions
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish src/LoreBot.Functions -c Release -o ./publish
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: lorebot-functions
+          package: ./publish
+          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
+
+  deploy-frontend:
+    name: Deploy Static Web App
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/LoreBot.Web/package-lock.json
+
+      - name: Install and build
+        run: cd src/LoreBot.Web && npm ci && npm run build
+
+      - name: Deploy to Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_SWA_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: src/LoreBot.Web
+          output_location: dist
+          skip_app_build: true

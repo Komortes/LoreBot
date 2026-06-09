@@ -61,10 +61,16 @@ public class CacheService : ICacheService
         var universe = await _db.Universes.FirstOrDefaultAsync(u => u.Slug == universeSlug, ct);
         if (universe is null) return;
 
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(question)));
+
+        var exists = await _db.ResponseCache.AnyAsync(
+            r => r.UniverseId == universe.Id && r.QuestionHash == hash, ct);
+        if (exists) return;
+
         _db.ResponseCache.Add(new ResponseCache
         {
             UniverseId = universe.Id,
-            QuestionHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(question))),
+            QuestionHash = hash,
             QuestionText = question,
             QuestionVector = questionVector,
             AnswerText = result.Answer,

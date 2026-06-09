@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\LoreBot.Core\LoreBot.Core.csproj" />
+    <ProjectReference Include="..\..\src\LoreBot.Functions\LoreBot.Functions.csproj" />
   </ItemGroup>
 </Project>

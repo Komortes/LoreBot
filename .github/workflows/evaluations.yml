@@ -1,11 +1,35 @@
-# AI Quality Checks — see LOREBOT_SPEC.md
-name: AI Evaluations
+name: AI Quality Gate
+
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+
 jobs:
-  placeholder:
+  evaluations:
+    name: AI Evaluations (Hallucination Gate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "TODO - implement per plan"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore src/LoreBot.Evaluations/LoreBot.Evaluations.csproj
+
+      - name: Run evaluations
+        run: dotnet test src/LoreBot.Evaluations --logger "trx;LogFileName=eval-results.trx" --no-restore
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DATABASE_CONNECTION_STRING: ${{ secrets.TEST_DATABASE_URL }}
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-results
+          path: "**/*.trx"

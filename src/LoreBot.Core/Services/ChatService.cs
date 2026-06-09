@@ -1,5 +1,6 @@
 using LoreBot.Core.Abstractions;
 using LoreBot.Core.Models;
+using LoreBot.Core.Tools;
 using Microsoft.Extensions.AI;
 using System.Text.Json;
 
@@ -10,8 +11,8 @@ public class ChatService : IChatService
     private readonly IEmbeddingService _embedder;
     private readonly IVectorSearchService _search;
     private readonly IChatClient _chat;
-    private readonly string _universeName;
     private readonly ICacheService? _cache;
+    private readonly IReadOnlyList<AITool>? _tools;
 
     private const double MinSimilarity = 0.75;
     private const int TopK = 8;
@@ -19,13 +20,24 @@ public class ChatService : IChatService
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public ChatService(IEmbeddingService embedder, IVectorSearchService search,
-        IChatClient chat, string universeName, ICacheService? cache = null)
+        IChatClient chat, string universeName = "", ICacheService? cache = null,
+        LoreSearchTools? loreTools = null)
     {
         _embedder = embedder;
         _search = search;
         _chat = chat;
-        _universeName = universeName;
         _cache = cache;
+        if (loreTools is not null)
+        {
+            _tools = new List<AITool>
+            {
+                AIFunctionFactory.Create(loreTools.SearchCharactersAsync),
+                AIFunctionFactory.Create(loreTools.SearchEventsAsync),
+                AIFunctionFactory.Create(loreTools.SearchAbilitiesAsync),
+                AIFunctionFactory.Create(loreTools.SearchLocationsAsync),
+                AIFunctionFactory.Create(loreTools.GetArticleAsync),
+            };
+        }
     }
 
     public async Task<ChatResult> ChatAsync(string universe, string message, string sessionId, CancellationToken ct = default)
@@ -59,12 +71,14 @@ public class ChatService : IChatService
 
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, PromptBuilder.BuildSystemPrompt(_universeName)),
+            new(ChatRole.System, PromptBuilder.BuildSystemPrompt(universe)),
             new(ChatRole.System, PromptBuilder.BuildContextBlock(filtered)),
             new(ChatRole.User, message)
         };
 
-        var response = await _chat.GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 800 }, ct);
+        var chatOptions = new ChatOptions { MaxOutputTokens = 800 };
+        if (_tools is { Count: > 0 }) chatOptions.Tools = (IList<AITool>)_tools;
+        var response = await _chat.GetResponseAsync(messages, chatOptions, ct);
         var tokens = (int)((response.Usage?.InputTokenCount ?? 0) + (response.Usage?.OutputTokenCount ?? 0));
         var parsed = ParseModelResponse(response.Text);
 

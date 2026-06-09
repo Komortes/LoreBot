@@ -11,6 +11,12 @@ function getSessionId(): string {
 
 export function useChat(universe: string) {
   const [messages, setMessages] = useState<Message[]>([])
+  // Reset history when universe changes
+  const prevUniverse = useRef(universe)
+  if (prevUniverse.current !== universe) {
+    prevUniverse.current = universe
+    setMessages([])
+  }
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sessionId = useRef(getSessionId())
