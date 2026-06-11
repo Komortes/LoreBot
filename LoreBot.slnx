@@ -3,6 +3,7 @@
     <Project Path="src/LoreBot.Core/LoreBot.Core.csproj" />
     <Project Path="src/LoreBot.Evaluations/LoreBot.Evaluations.csproj" />
     <Project Path="src/LoreBot.Functions/LoreBot.Functions.csproj" />
+    <Project Path="src/LoreBot.Indexer/LoreBot.Indexer.csproj" />
     <Project Path="src/LoreBot.Infrastructure/LoreBot.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
