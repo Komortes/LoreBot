@@ -1,0 +1,25 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+
+    "_profile_note": "Pick ONE provider profile. openai-postgres = default cloud RAG. cheap-serverless = local gguf embeddings + file vector store + DeepSeek chat.",
+
+    "EMBEDDING_PROVIDER": "openai",
+    "VECTOR_STORE_PROVIDER": "postgres",
+    "LLM_PROVIDER": "openai",
+
+    "OPENAI_API_KEY": "sk-your-openai-key-here",
+    "DEEPSEEK_API_KEY": "",
+
+    "LOCAL_EMBEDDING_MODEL_PATH": "",
+    "RAG_DATA_PATH": "",
+
+    "DATABASE_CONNECTION_STRING": "Host=localhost;Port=5432;Database=lorebot;Username=postgres;Password=postgres",
+    "ADMIN_API_KEY": "local-admin-secret",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": "",
+
+    "_cheap_serverless_example": "EMBEDDING_PROVIDER=local, VECTOR_STORE_PROVIDER=file, LLM_PROVIDER=deepseek, DEEPSEEK_API_KEY=sk-..., LOCAL_EMBEDDING_MODEL_PATH=./models/embedding.gguf, RAG_DATA_PATH=./rag-data/lorebot-rag-index.jojo.json (DATABASE_CONNECTION_STRING still needed for rate-limit + cache stores)"
+  }
+}

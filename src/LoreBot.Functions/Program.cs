@@ -5,8 +5,8 @@ using LoreBot.Core.Middleware;
 using LoreBot.Core.Services;
 using LoreBot.Core.Tools;
 using LoreBot.Functions.Middleware;
+using LoreBot.Infrastructure.Configuration;
 using LoreBot.Infrastructure.Database;
-using LoreBot.Infrastructure.Database.Repositories;
 using LoreBot.Infrastructure.Ingestion;
 using LoreBot.Infrastructure.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -27,6 +27,7 @@ var host = new HostBuilder()
     {
         var config = context.Configuration;
 
+        // Bind + validate provider options for IOptions<LoreBotOptions> consumers (e.g. AdminFunction).
         services.AddOptions<LoreBotOptions>()
             .Configure(o =>
             {
@@ -45,42 +46,26 @@ var host = new HostBuilder()
                 "Invalid LoreBot provider configuration. Check provider-specific environment variables.")
             .ValidateOnStart();
 
+        // Same values, materialized now to select concrete providers during composition.
+        var loreBotOptions = new LoreBotOptions
+        {
+            OpenAiApiKey = config["OPENAI_API_KEY"] ?? "",
+            DeepSeekApiKey = config["DEEPSEEK_API_KEY"] ?? "",
+            LlmProvider = config["LLM_PROVIDER"] ?? "openai",
+            EmbeddingProvider = config["EMBEDDING_PROVIDER"] ?? "openai",
+            VectorStoreProvider = config["VECTOR_STORE_PROVIDER"] ?? "postgres",
+            LocalEmbeddingModelPath = config["LOCAL_EMBEDDING_MODEL_PATH"] ?? "",
+            RagDataPath = config["RAG_DATA_PATH"] ?? "",
+            DatabaseConnectionString = config["DATABASE_CONNECTION_STRING"] ?? "",
+            AdminApiKey = config["ADMIN_API_KEY"] ?? "",
+        };
+
         services.AddDbContext<AppDbContext>(opt =>
-            opt.UseNpgsql(config["DATABASE_CONNECTION_STRING"] ?? "", n => n.UseVector()));
+            opt.UseNpgsql(loreBotOptions.DatabaseConnectionString, n => n.UseVector()));
 
-        // Embeddings: use OpenAI if key is set, otherwise fall back to local hash-projection (dev only)
-        var openAiApiKey = config["OPENAI_API_KEY"] is { Length: > 0 } k ? k : null;
-        var openAiClient = openAiApiKey is not null ? new OpenAIClient(openAiApiKey) : null;
-        if (openAiClient is not null)
-        {
-            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(_ =>
-                openAiClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
-            services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
-        }
-        else
-        {
-            services.AddSingleton<IEmbeddingService, LocalEmbeddingService>();
-        }
+        // Embeddings + vector store selected by the configured provider profile.
+        services.AddRagProviders(loreBotOptions);
 
-        // Chat client: DeepSeek or OpenAI based on LLM_PROVIDER
-        var llmProvider = config["LLM_PROVIDER"] ?? "openai";
-        var deepSeekKey = config["DEEPSEEK_API_KEY"] is { Length: > 0 } dk ? dk : null;
-        OpenAIClient chatOpenAiClient;
-        string chatModelName;
-        if (llmProvider.Equals("deepseek", StringComparison.OrdinalIgnoreCase) && deepSeekKey is not null)
-        {
-            chatOpenAiClient = new OpenAIClient(
-                new System.ClientModel.ApiKeyCredential(deepSeekKey),
-                new OpenAI.OpenAIClientOptions { Endpoint = new Uri("https://api.deepseek.com/v1") });
-            chatModelName = "deepseek-chat";
-        }
-        else
-        {
-            chatOpenAiClient = openAiClient ?? new OpenAIClient("sk-placeholder");
-            chatModelName = "gpt-4o-mini";
-        }
-
-        services.AddScoped<IVectorSearchService, VectorSearchService>();
         services.AddScoped<TextChunker>(_ => new TextChunker(512, 64));
         services.AddScoped<IndexingPipeline>();
         services.AddHttpClient<WikiScraper>();
@@ -90,6 +75,24 @@ var host = new HostBuilder()
         services.AddScoped<ICacheService, CacheService>();
         services.AddSingleton<InputGuardRails>();
         services.AddSingleton<OutputGuardRails>();
+
+        // Chat client: DeepSeek (OpenAI-compatible endpoint) or OpenAI, selected by LLM_PROVIDER.
+        OpenAIClient chatClient;
+        string chatModelName;
+        var deepSeekKey = string.IsNullOrWhiteSpace(loreBotOptions.DeepSeekApiKey) ? null : loreBotOptions.DeepSeekApiKey;
+        if (loreBotOptions.LlmProvider.Equals("deepseek", StringComparison.OrdinalIgnoreCase) && deepSeekKey is not null)
+        {
+            chatClient = new OpenAIClient(
+                new System.ClientModel.ApiKeyCredential(deepSeekKey),
+                new OpenAIClientOptions { Endpoint = new Uri("https://api.deepseek.com/v1") });
+            chatModelName = "deepseek-chat";
+        }
+        else
+        {
+            var openAiKey = string.IsNullOrWhiteSpace(loreBotOptions.OpenAiApiKey) ? "sk-placeholder" : loreBotOptions.OpenAiApiKey;
+            chatClient = new OpenAIClient(openAiKey);
+            chatModelName = loreBotOptions.ChatModel;
+        }
 
         // OpenTelemetry → Azure Monitor
         var appInsightsConnStr = config["APPLICATIONINSIGHTS_CONNECTION_STRING"];
@@ -102,13 +105,13 @@ var host = new HostBuilder()
                     b.AddAzureMonitorTraceExporter(o => o.ConnectionString = appInsightsConnStr);
             });
 
+        // Rate limiting lives at the HTTP edge (per-IP in ChatFunction); the chat-client pipeline
+        // deliberately omits a second instance-wide limiter to avoid double counting.
         services.AddScoped<IChatClient>(sp =>
         {
-            var inner = chatOpenAiClient.GetChatClient(chatModelName).AsIChatClient();
+            var inner = chatClient.GetChatClient(chatModelName).AsIChatClient();
             return inner.AsBuilder()
                 .Use(next => new ObservabilityChatClient(next, "lorebot"))
-                .Use(next => new RateLimitingChatClient(
-                    next, sp.GetRequiredService<IRateLimitService>(), () => "global"))
                 .Use(next => new GuardRailsChatClient(
                     next,
                     sp.GetRequiredService<InputGuardRails>(),
@@ -126,7 +129,7 @@ var host = new HostBuilder()
             sp.GetRequiredService<IEmbeddingService>(),
             sp.GetRequiredService<IVectorSearchService>(),
             sp.GetRequiredService<IChatClient>(),
-            "JoJo's Bizarre Adventure",
+            loreBotOptions.DefaultUniverseName,
             sp.GetRequiredService<ICacheService>(),
             sp.GetRequiredService<LoreSearchTools>()));
     })
