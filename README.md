@@ -1,177 +1,253 @@
 # LoreBot
 
-A production-grade **RAG (Retrieval-Augmented Generation) lore chatbot** that answers questions about
-anime/game universes — **JoJo's Bizarre Adventure**, **Persona 5**, and **Chainsaw Man** — with
-grounded, **cited** answers retrieved from official wikis.
+A **RAG chatbot** that answers questions about anime/game universes using content retrieved from official wikis — grounded, cited answers, no hallucinated lore.
 
-Ask *"Who is Dio Brando?"* and get an answer assembled only from retrieved source chunks, with
-inline `[N]` citations and source cards — never hallucinated lore.
+Built on a production-oriented .NET + React stack with a pluggable provider system — swap the LLM, embedding model, and vector store via config without touching application code.
 
 ---
 
-## Highlights
+## Status
 
-- **Grounded RAG pipeline** — query → embed → vector search → context assembly → cited answer.
-- **`Microsoft.Extensions.AI` `IChatClient` middleware pipeline** — observability → guardrails →
-  logging, composed around any chat backend.
-- **Pluggable provider profiles** — swap embeddings, vector store, and LLM by configuration
-  (OpenAI + pgvector, or a fully local gguf + file-vector-store "cheap-serverless" profile).
-- **Structured, component-driven responses** — the model returns a typed JSON envelope
-  (`answer` / `character` / `timeline` / `comparison` / …) that the React UI renders as cards.
-- **Guardrails, rate limiting, and response caching** built in.
-- **Quality gates** — deterministic retrieval tests + `Microsoft.Extensions.AI.Evaluation` cases in CI.
-- **Observability** — OpenTelemetry traces → Azure Monitor.
+| Feature | State |
+|---|---|
+| JoJo's Bizarre Adventure — indexed & queryable | ✅ Working |
+| Conversation context (multi-turn follow-ups) | ✅ Working |
+| Inline `[N]` citation links in answers | ✅ Working |
+| OpenAI embeddings + pgvector RAG profile | ✅ Working |
+| DeepSeek chat (OpenAI-compatible) | ✅ Working |
+| Prompt-injection & jailbreak guardrails | ✅ Working |
+| Output grounding & hallucination flagging | ✅ Working |
+| Per-IP rate limiting (sliding window) | ✅ Working |
+| Response cache (vector similarity) | ✅ Working |
+| Admin indexing API | ✅ Working |
+| Persona 5 & Chainsaw Man — not yet indexed | 🔄 In progress |
+| Azure deployment (Bicep IaC exists) | 🔄 In progress |
+| Evaluation quality gates | 🔄 In progress |
+| CI/CD pipelines | 🔄 In progress |
+| Cheap-serverless profile (local gguf + file store) | 🔄 In progress |
 
-## Architecture
+---
+
+## How it works
 
 ```
-React SPA  ──HTTP──▶  Azure Functions (.NET 10 isolated)
-                          │
-                          ▼
-                 IChatService (RAG orchestration)
-   embed query ─▶ vector search ─▶ assemble context ─▶ IChatClient pipeline ─▶ cited answer
-                          │                                  │
-                   IEmbeddingService                 observability → guardrails → logging
-                   IVectorSearchService                       │
-                          │                                  ▼
-              pgvector  OR  file artifact            OpenAI / DeepSeek (chat)
+User question
+    │
+    ▼
+Embed question (OpenAI text-embedding-3-small)
+    │
+    ▼
+Vector search → top-K similar wiki chunks (pgvector cosine similarity)
+    │
+    ▼
+Assemble context block + conversation history
+    │
+    ▼
+IChatClient middleware pipeline
+  UseFunctionInvocation → ObservabilityClient → GuardRailsClient → LoggingClient
+    │
+    ▼
+LLM (DeepSeek / OpenAI) → structured JSON response
+  { type, answer, confidence, cards }
+    │
+    ▼
+React SPA renders answer with clickable inline [N] source links
 ```
 
-Content is ingested from MediaWiki APIs (`WikiScraper` → `TextChunker` → `IndexingPipeline`) into the
-vector store. Rate limiting is enforced **once**, per-IP at the HTTP edge.
+Wiki content is ingested via MediaWiki API → `WikiScraper` → `TextChunker` (512-token chunks, 64-token overlap) → `IndexingPipeline` → pgvector embeddings.
+
+---
 
 ## Tech stack
 
-C# **.NET 10**, Azure Functions (Isolated v4), `Microsoft.Extensions.AI` 9.5, OpenAI
-(`gpt-4o-mini` + `text-embedding-3-small`) / DeepSeek (`deepseek-chat`), EF Core 9 + Npgsql +
-`pgvector`, LLamaSharp (local gguf embeddings), React 19 + Vite + TypeScript + Tailwind 4,
-OpenTelemetry → Azure Monitor, xUnit + `Microsoft.Extensions.AI.Evaluation`, Bicep, GitHub Actions.
+| Layer | Technology |
+|---|---|
+| Backend | C# .NET 10, Azure Functions Isolated v4 |
+| AI abstraction | `Microsoft.Extensions.AI` 9.5 (`IChatClient` pipeline) |
+| LLM | DeepSeek `deepseek-chat` (OpenAI-compatible) / `gpt-4o-mini` |
+| Embeddings | OpenAI `text-embedding-3-small` / local gguf via LLamaSharp |
+| Vector store | PostgreSQL 16 + `pgvector` / file-based JSON artifact |
+| ORM | EF Core 9 + Npgsql |
+| Frontend | React 19, Vite, TypeScript, Tailwind CSS v4 |
+| Observability | OpenTelemetry → Azure Monitor / Application Insights |
+| Tests | xUnit, Vitest, `Microsoft.Extensions.AI.Evaluation` |
+| IaC | Bicep (Azure Functions Consumption + Flexible PostgreSQL + Static Web App) |
+
+---
 
 ## Provider profiles
 
-Selected via environment variables (`RagProviderRegistration.AddRagProviders`):
+Configured via environment variables — swap everything without changing code:
 
-| Profile | `EMBEDDING_PROVIDER` | `VECTOR_STORE_PROVIDER` | `LLM_PROVIDER` | Use case |
+| Profile | Embeddings | Vector store | LLM | Notes |
 |---|---|---|---|---|
-| **openai-postgres** (default) | `openai` | `postgres` | `openai` / `deepseek` | Cloud RAG with pgvector |
-| **cheap-serverless** | `local` | `file` | `deepseek` | Local gguf embeddings + static JSON index, no OpenAI/pgvector cost |
-| **dev-local** (fallback) | `openai` (no key) | `postgres` | — | Key-free local dev via hash-projection embedder |
+| `openai-postgres` | `openai` | `postgres` | `openai` or `deepseek` | Default, cloud RAG |
+| `cheap-serverless` | `local` (gguf) | `file` (JSON artifact) | `deepseek` | Zero cloud embedding cost, offline-buildable |
 
-See [`docs/benchmarks/local-rag.md`](docs/benchmarks/local-rag.md) for the cheap-serverless benchmark
-methodology and the Azure deployment go/no-go decision.
+---
 
 ## Project structure
 
 ```
 src/
-  LoreBot.Core/            Domain models, abstractions, RAG orchestration, guardrails, prompt builder
-  LoreBot.Infrastructure/  EF Core + pgvector, embeddings, ingestion, file vector store, provider DI
-  LoreBot.Functions/       Azure Functions HTTP edge + DI composition root
-  LoreBot.Indexer/         Offline CLI: build/verify static RAG artifacts (cheap-serverless)
-  LoreBot.Evaluations/     Microsoft.Extensions.AI.Evaluation quality tests
-  LoreBot.Web/             React 19 + Vite + Tailwind SPA
-tests/                     xUnit unit + retrieval-quality tests
-infra/                     Bicep IaC (modules + parameters)
-scripts/                   DB seeds, wiki indexing, artifact build, benchmark
+  LoreBot.Core/          Domain models, RAG orchestration, IChatClient middleware, guardrails
+  LoreBot.Infrastructure/ EF Core, pgvector, embeddings, ingestion pipeline, file vector store
+  LoreBot.Functions/     Azure Functions HTTP edge, DI composition root
+  LoreBot.Indexer/       Offline CLI: build static RAG artifacts for cheap-serverless profile
+  LoreBot.Evaluations/   AI.Evaluation quality tests (retrieval + answer accuracy)
+  LoreBot.Web/           React SPA (chat UI, inline citations, dark mode)
+tests/                   xUnit unit + retrieval-quality tests
+infra/                   Bicep IaC
 ```
 
-## Getting started
+---
+
+## Local development
 
 ### Prerequisites
-- .NET 10 SDK, Node.js 22, a PostgreSQL 16 instance with the `vector` extension.
 
-### 1. Database
+- .NET 10 SDK
+- Node.js 22+
+- Docker (for PostgreSQL + pgvector)
+- Azure Functions Core Tools v4
+- OpenAI API key (embeddings) + DeepSeek API key (or OpenAI for chat)
+
+### 1. Start PostgreSQL
+
 ```bash
-# Apply EF migrations, then seed the three universes:
-dotnet ef database update --project src/LoreBot.Infrastructure
-psql "$DATABASE_CONNECTION_STRING" -f scripts/seed-jojo.sql
-psql "$DATABASE_CONNECTION_STRING" -f scripts/seed-persona.sql
-psql "$DATABASE_CONNECTION_STRING" -f scripts/seed-chainsaw-man.sql
+docker run -d --name lorebot-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  pgvector/pgvector:pg16
 ```
 
-### 2. Configure
+### 2. Apply migrations
+
 ```bash
-cp src/LoreBot.Functions/local.settings.json.example src/LoreBot.Functions/local.settings.json
-# Fill in keys / connection string and pick a provider profile.
+dotnet ef database update --project src/LoreBot.Infrastructure \
+  --startup-project src/LoreBot.Functions
 ```
 
-### 3. Run the API
+### 3. Configure
+
 ```bash
-cd src/LoreBot.Functions && func start    # Azure Functions Core Tools
+cp src/LoreBot.Functions/local.settings.json.example \
+   src/LoreBot.Functions/local.settings.json
+# Edit: add OPENAI_API_KEY, DEEPSEEK_API_KEY, DATABASE_CONNECTION_STRING
 ```
 
-### 4. Run the web app
+### 4. Seed universes and index content
+
+```bash
+# Start the API first (step 5), then:
+curl -X POST http://localhost:7071/api/manage/index \
+  -H "Content-Type: application/json" \
+  -H "x-admin-key: local-admin-secret" \
+  -d '{
+    "universe": "jojo",
+    "wikiApiUrl": "https://jojo.fandom.com/api.php",
+    "titles": ["Dio Brando","Jotaro Kujo","Stand","Yoshikage Kira","Giorno Giovanna"]
+  }'
+```
+
+Pass `"titles": [...]` to index specific pages, or omit it with `"maxPages": 100` to crawl alphabetically (skips `#REDIRECT` pages automatically).
+
+### 5. Run the API
+
+```bash
+cd src/LoreBot.Functions && func start
+```
+
+### 6. Run the frontend
+
 ```bash
 cd src/LoreBot.Web && npm install && npm run dev
+# → http://localhost:5173
 ```
 
-### 5. Index content (populate the vector store)
-```bash
-scripts/index-wiki.sh           # MediaWiki → pgvector (openai-postgres profile)
-```
-
-## Configuration
-
-| Variable | Description |
-|---|---|
-| `EMBEDDING_PROVIDER` | `openai` \| `local` |
-| `VECTOR_STORE_PROVIDER` | `postgres` \| `file` |
-| `LLM_PROVIDER` | `openai` \| `deepseek` |
-| `OPENAI_API_KEY` | OpenAI key (embeddings + chat) |
-| `DEEPSEEK_API_KEY` | DeepSeek key (required when `LLM_PROVIDER=deepseek`) |
-| `LOCAL_EMBEDDING_MODEL_PATH` | gguf model path (required when `EMBEDDING_PROVIDER=local`) |
-| `RAG_DATA_PATH` | RAG artifact path/dir (required when `VECTOR_STORE_PROVIDER=file`) |
-| `DATABASE_CONNECTION_STRING` | PostgreSQL (also backs rate limiting + response cache) |
-| `ADMIN_API_KEY` | Protects the admin index endpoint |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure Monitor / OpenTelemetry export |
+---
 
 ## HTTP API
 
-All routes are served under `/api`:
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/chat` | — | `{ universe, message, sessionId?, history? }` → cited answer |
+| `GET` | `/api/universes` | — | List active universes |
+| `GET` | `/api/universes/{slug}/stats` | — | Chunk count + metadata for a universe |
+| `POST` | `/api/manage/index` | `x-admin-key` | Trigger wiki ingestion |
+| `GET` | `/api/health` | — | `{ status, database }` |
 
-| Method | Route | Description |
+`/api/chat` supports multi-turn context via `history`:
+
+```json
+{
+  "universe": "jojo",
+  "message": "What are his abilities?",
+  "sessionId": "abc123",
+  "history": [
+    { "role": "user", "content": "Who is Dio Brando?" },
+    { "role": "assistant", "content": "Dio Brando is the main antagonist..." }
+  ]
+}
+```
+
+---
+
+## Configuration
+
+| Variable | Required | Description |
 |---|---|---|
-| `POST` | `/api/chat` | Ask a question: `{ universe, message, sessionId? }` → cited structured answer |
-| `GET`  | `/api/universes` | List active universes |
-| `GET`  | `/api/universes/{slug}/stats` | Indexed document stats for a universe |
-| `POST` | `/api/manage/index` | Admin: trigger ingestion (requires `ADMIN_API_KEY`) |
-| `GET`  | `/api/health` | Health check |
+| `LLM_PROVIDER` | ✅ | `openai` \| `deepseek` |
+| `EMBEDDING_PROVIDER` | ✅ | `openai` \| `local` |
+| `VECTOR_STORE_PROVIDER` | ✅ | `postgres` \| `file` |
+| `OPENAI_API_KEY` | When using OpenAI | Embeddings and/or chat |
+| `DEEPSEEK_API_KEY` | When `LLM_PROVIDER=deepseek` | DeepSeek chat |
+| `DATABASE_CONNECTION_STRING` | ✅ | PostgreSQL (also backs rate limiting and cache) |
+| `ADMIN_API_KEY` | ✅ | Protects `/api/manage/index` |
+| `LOCAL_EMBEDDING_MODEL_PATH` | When `EMBEDDING_PROVIDER=local` | Path to `.gguf` model |
+| `RAG_DATA_PATH` | When `VECTOR_STORE_PROVIDER=file` | Path to built artifact |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional | OpenTelemetry export |
 
-## Offline indexer (cheap-serverless)
+---
 
-Build a static, self-contained vector artifact from local text using a quantized gguf model:
+## Security & guardrails
 
-```bash
-# Build:
-dotnet run --project src/LoreBot.Indexer -- build \
-  --universe jojo --input ./input-data/jojo --output ./rag-data \
-  --model ./models/embedding.gguf
+Protection is layered across the `IChatClient` middleware pipeline and the HTTP edge.
 
-# Verify retrieval:
-dotnet run --project src/LoreBot.Indexer -- verify \
-  --artifact ./rag-data/lorebot-rag-index.jojo.json \
-  --model ./models/embedding.gguf --universe jojo \
-  --query "Who is Dio Brando?"
-```
+**Input guardrails** (`InputGuardRails`) — checked before the request reaches the LLM:
+- Jailbreak / prompt-injection patterns (`"ignore previous instructions"`, `"you are now"`, `"forget your system prompt"`, Russian equivalents, etc.)
+- NSFW keyword list
 
-The artifact embeds an embedding-model hash + dimension; `FileVectorSearchService` validates them at
-load time so a mismatched model/index pair fails fast.
+**Output guardrails** (`OutputGuardRails`) — checked on every LLM response:
+- Model-disclaimer detection (`"as a language model"`, `"как языковая модель"`) — flags responses where the model broke character
+- Citation presence check — warns if the answer contains no `[N]` source reference
+- Grounding check — token-overlap heuristic between the answer and the retrieved context, flags likely hallucinations
 
-## Testing
+**HTTP edge** (`ChatFunction`):
+- Per-IP rate limiting (sliding window via PostgreSQL) — blocked requests return a `rate_limited` structured response, never a 429
+- `ADMIN_API_KEY` header required on `/api/manage/index`
 
-```bash
-dotnet test LoreBot.slnx                 # .NET unit + retrieval-quality + evaluation tests
-cd src/LoreBot.Web && npm test           # frontend (Vitest)
-scripts/benchmark-local-rag.sh ...       # local RAG cold-load / latency / memory benchmark
-```
+All blocks and flags are logged with structured fields (`LoreBot.GuardRailBlocked`, `LoreBot.OutputFlagged`) for observability.
+
+---
 
 ## Deployment
 
-- **Infrastructure:** `infra/main.bicep` provisions Postgres (flexible server + `vector`), Function
-  App (Consumption), Static Web App (Free), and Log Analytics + Application Insights.
-- **CI/CD:** `.github/workflows/` builds + tests both stacks, runs evaluation gates, and deploys the
-  Functions app and Static Web App on `main`.
+Bicep templates in `infra/` provision:
+- Azure Functions (Consumption plan)
+- Azure Database for PostgreSQL Flexible Server with `pgvector`
+- Azure Static Web Apps
+- Log Analytics + Application Insights
 
-> **Note:** the Azure *cheap-serverless* (local-model) deployment profile is intentionally deferred to
-> `document-only` pending benchmarks — see [`docs/benchmarks/local-rag.md`](docs/benchmarks/local-rag.md).
-> The committed Bicep targets the default openai-postgres profile.
+> Azure deployment is not yet live — IaC is written and validated but the deploy step is in progress.
+
+---
+
+## Roadmap
+
+- [ ] Index Persona 5 and Chainsaw Man universes
+- [ ] Deploy to Azure (IaC ready)
+- [ ] Set up GitHub Actions CI/CD
+- [ ] Evaluation quality gates (`Microsoft.Extensions.AI.Evaluation`)
+- [ ] Benchmark and document cheap-serverless gguf profile
+- [ ] Streaming responses (SSE)
