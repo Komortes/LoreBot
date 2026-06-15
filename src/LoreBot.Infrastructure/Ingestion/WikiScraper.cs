@@ -8,18 +8,23 @@ public class WikiScraper
     private readonly HttpClient _http;
     public WikiScraper(HttpClient http) => _http = http;
 
-    public async Task<List<string>> ListAllPagesAsync(string apiUrl, CancellationToken ct = default)
+    public async Task<List<string>> ListAllPagesAsync(string apiUrl, string? startFrom = null, CancellationToken ct = default)
     {
         var titles = new List<string>();
-        string? continueToken = null;
+        string? continueToken = startFrom;
+        bool firstRequest = true;
         do
         {
             var url = $"{apiUrl}?action=query&list=allpages&aplimit=500&format=json";
-            if (continueToken is not null) url += $"&apcontinue={Uri.EscapeDataString(continueToken)}";
+            if (continueToken is not null)
+                url += firstRequest
+                    ? $"&apfrom={Uri.EscapeDataString(continueToken)}"
+                    : $"&apcontinue={Uri.EscapeDataString(continueToken)}";
             using var doc = JsonDocument.Parse(await _http.GetStringAsync(url, ct));
             var root = doc.RootElement;
             foreach (var p in root.GetProperty("query").GetProperty("allpages").EnumerateArray())
                 titles.Add(p.GetProperty("title").GetString()!);
+            firstRequest = false;
             continueToken = root.TryGetProperty("continue", out var c)
                 && c.TryGetProperty("apcontinue", out var ac) ? ac.GetString() : null;
         } while (continueToken is not null);

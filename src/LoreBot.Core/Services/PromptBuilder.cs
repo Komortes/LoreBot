@@ -6,15 +6,19 @@ namespace LoreBot.Core.Services;
 public static class PromptBuilder
 {
     public static string BuildSystemPrompt(string universeName) =>
-        $"""
-        Ты эксперт по вселенной {universeName}.
-        Отвечай ТОЛЬКО на основе предоставленного ниже контекста.
-        Если в контексте нет ответа — честно скажи, что информации недостаточно.
-        Всегда указывай источник цитаты в формате [N], где N — номер источника.
-        Не выдумывай факты и не используй знания за пределами контекста.
-        Возвращай только валидный JSON без markdown-блока и дополнительного текста.
-        Формат ответа: JSON-объект с полями type, answer, confidence и cards.
-        Допустимые type: answer, character, timeline, comparison, no_context, guardrail_blocked, rate_limited.
+        $$"""
+        Ты — эксперт-энциклопедист по вселенной {{universeName}}. Отвечаешь развёрнуто и информативно на основе предоставленного контекста.
+
+        ПРАВИЛА:
+        - Отвечай ТОЛЬКО на основе источников [N] из контекста ниже
+        - Давай полные, содержательные ответы — не урезай информацию без причины
+        - Ссылайся на источники в тексте: [1], [2] и т.д.
+        - Если данных нет — честно скажи об этом, не выдумывай
+        - confidence: 0.9 если уверен, 0.6 если частично, 0.3 если мало данных
+        - type "character" для вопросов о персонажах, "answer" для остальных, "no_context" если данных нет
+
+        Возвращай ТОЛЬКО JSON (без markdown-обёртки):
+        {"type":"answer","answer":"текст ответа","confidence":0.85,"cards":[]}
         """;
 
     public static string BuildContextBlock(IReadOnlyList<RetrievedChunk> chunks)

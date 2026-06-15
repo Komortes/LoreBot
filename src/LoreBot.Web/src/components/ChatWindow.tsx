@@ -2,6 +2,25 @@ import { useRef, useEffect, useState } from 'react'
 import { useChat } from '../hooks/useChat'
 import { MessageBubble } from './MessageBubble'
 
+const SUGGESTIONS = [
+  'Кто такой Дио Брандо?',
+  'Что такое Стенд?',
+  'Расскажи про Джотаро Куджо',
+]
+
+function TypingDots() {
+  return (
+    <div className="msg-row bot">
+      <div className="bot-avatar">L</div>
+      <div className="bubble bot">
+        <div className="typing-dots">
+          <span /><span /><span />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ChatWindow({ universe }: { universe: string }) {
   const { messages, isLoading, error, sendMessage } = useChat(universe)
   const [input, setInput] = useState('')
@@ -9,7 +28,7 @@ export function ChatWindow({ universe }: { universe: string }) {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isLoading])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -19,42 +38,48 @@ export function ChatWindow({ universe }: { universe: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+    <>
+      <div className="messages">
         {messages.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-            Задай вопрос о вселенной...
-          </div>
-        )}
-        {messages.map((m, i) => <MessageBubble key={i} message={m} />)}
-        {isLoading && (
-          <div className="flex justify-start mb-4">
-            <div className="rounded-md border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-              <span className="animate-pulse text-sm text-gray-500 dark:text-gray-400">Думаю...</span>
+          <div className="empty-state">
+            <div>
+              <div className="empty-icon">L</div>
+              <p className="empty-title">LoreBot готов отвечать</p>
+              <p className="empty-sub">Задай вопрос о вселенной или выбери подсказку</p>
+            </div>
+            <div className="suggestions">
+              {SUGGESTIONS.map(s => (
+                <button
+                  key={s}
+                  className="suggestion-btn"
+                  onClick={() => !isLoading && sendMessage(s)}
+                >
+                  {s}
+                </button>
+              ))}
             </div>
           </div>
         )}
-        {error && <p className="text-red-400 text-sm text-center py-2">{error}</p>}
+        {messages.map((m, i) => <MessageBubble key={i} message={m} />)}
+        {isLoading && <TypingDots />}
+        {error && <div className="error-bar">{error}</div>}
         <div ref={bottomRef} />
       </div>
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+
+      <form className="input-area" onSubmit={handleSubmit}>
         <input
+          className="chat-input"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="Задай вопрос..."
+          placeholder="Задай вопрос о вселенной..."
           disabled={isLoading}
-          className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900
-                     focus:border-indigo-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
         />
-        <button
-          type="submit"
-          disabled={isLoading || !input.trim()}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors
-                     hover:bg-indigo-700 disabled:opacity-50"
-        >
-          Отправить
+        <button type="submit" className="send-btn" disabled={isLoading || !input.trim()}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+            <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95 28.897 28.897 0 0 0 15.293-7.154.75.75 0 0 0 0-1.115A28.897 28.897 0 0 0 3.105 2.288Z" />
+          </svg>
         </button>
       </form>
-    </div>
+    </>
   )
 }

@@ -111,6 +111,7 @@ var host = new HostBuilder()
         {
             var inner = chatClient.GetChatClient(chatModelName).AsIChatClient();
             return inner.AsBuilder()
+                .UseFunctionInvocation()
                 .Use(next => new ObservabilityChatClient(next, "lorebot"))
                 .Use(next => new GuardRailsChatClient(
                     next,

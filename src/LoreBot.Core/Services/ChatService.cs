@@ -14,7 +14,7 @@ public class ChatService : IChatService
     private readonly ICacheService? _cache;
     private readonly IReadOnlyList<AITool>? _tools;
 
-    private const double MinSimilarity = 0.75;
+    private const double MinSimilarity = 0.30;
     private const int TopK = 8;
     private const int ContextK = 5;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -40,7 +40,8 @@ public class ChatService : IChatService
         }
     }
 
-    public async Task<ChatResult> ChatAsync(string universe, string message, string sessionId, CancellationToken ct = default)
+    public async Task<ChatResult> ChatAsync(string universe, string message, string sessionId,
+        IReadOnlyList<(string Role, string Content)>? history = null, CancellationToken ct = default)
     {
         var queryVector = await _embedder.EmbedAsync(message, ct);
 
@@ -73,11 +74,19 @@ public class ChatService : IChatService
         {
             new(ChatRole.System, PromptBuilder.BuildSystemPrompt(universe)),
             new(ChatRole.System, PromptBuilder.BuildContextBlock(filtered)),
-            new(ChatRole.User, message)
         };
 
+        if (history is { Count: > 0 })
+        {
+            foreach (var (role, content) in history.TakeLast(6))
+                messages.Add(new ChatMessage(
+                    role == "assistant" ? ChatRole.Assistant : ChatRole.User,
+                    content));
+        }
+
+        messages.Add(new(ChatRole.User, message));
+
         var chatOptions = new ChatOptions { MaxOutputTokens = 800 };
-        if (_tools is { Count: > 0 }) chatOptions.Tools = (IList<AITool>)_tools;
         var response = await _chat.GetResponseAsync(messages, chatOptions, ct);
         var tokens = (int)((response.Usage?.InputTokenCount ?? 0) + (response.Usage?.OutputTokenCount ?? 0));
         var parsed = ParseModelResponse(response.Text);
@@ -103,9 +112,10 @@ public class ChatService : IChatService
 
     private static ParsedModelResponse ParseModelResponse(string text)
     {
+        var json = StripMarkdownFences(text.Trim());
         try
         {
-            var parsed = JsonSerializer.Deserialize<ParsedModelResponse>(text, Json);
+            var parsed = JsonSerializer.Deserialize<ParsedModelResponse>(json, Json);
             if (parsed is not null && !string.IsNullOrWhiteSpace(parsed.Answer))
             {
                 parsed.Type = NormalizeResponseType(parsed.Type);
@@ -117,7 +127,20 @@ public class ChatService : IChatService
         {
         }
 
-        return new ParsedModelResponse { Type = "answer", Answer = text, Cards = new() };
+        return new ParsedModelResponse { Type = "answer", Answer = json, Cards = new() };
+    }
+
+    private static string StripMarkdownFences(string text)
+    {
+        if (text.StartsWith("```"))
+        {
+            var firstNewline = text.IndexOf('\n');
+            if (firstNewline > 0)
+                text = text[(firstNewline + 1)..];
+            if (text.EndsWith("```"))
+                text = text[..^3].TrimEnd();
+        }
+        return text.Trim();
     }
 
     private static string NormalizeResponseType(string? type) =>
@@ -129,7 +152,28 @@ public class ChatService : IChatService
     {
         public string Type { get; set; } = "answer";
         public string Answer { get; set; } = string.Empty;
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleDoubleConverter))]
         public double? Confidence { get; set; }
         public List<ChatCard> Cards { get; set; } = new();
+    }
+
+    private sealed class FlexibleDoubleConverter : System.Text.Json.Serialization.JsonConverter<double?>
+    {
+        public override double? Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Number) return reader.GetDouble();
+            if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+            {
+                var s = reader.GetString();
+                if (double.TryParse(s, out var v)) return v;
+                return s?.ToLower() switch { "high" => 0.9, "medium" => 0.6, "low" => 0.3, _ => null };
+            }
+            reader.Skip();
+            return null;
+        }
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, double? value, JsonSerializerOptions options)
+        {
+            if (value.HasValue) writer.WriteNumberValue(value.Value); else writer.WriteNullValue();
+        }
     }
 }

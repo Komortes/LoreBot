@@ -23,7 +23,7 @@ public class AdminFunction
         _db = db; _scraper = scraper; _pipeline = pipeline; _options = options.Value;
     }
 
-    public record IndexRequest(string Universe, string WikiApiUrl, int MaxPages = 50);
+    public record IndexRequest(string Universe, string WikiApiUrl, int MaxPages = 50, string? StartFrom = null, List<string>? Titles = null);
 
     [Function("AdminIndex")]
     public async Task<HttpResponseData> IndexAsync(
@@ -60,12 +60,16 @@ public class AdminFunction
             return bad;
         }
 
-        var titles = (await _scraper.ListAllPagesAsync(dto.WikiApiUrl, ctx.CancellationToken)).Take(dto.MaxPages);
+        IEnumerable<string> titles = dto.Titles is { Count: > 0 }
+            ? dto.Titles
+            : (await _scraper.ListAllPagesAsync(dto.WikiApiUrl, dto.StartFrom, ctx.CancellationToken)).Take(dto.MaxPages);
+
         int indexed = 0;
         foreach (var title in titles)
         {
             var (t, text) = await _scraper.GetPlainTextAsync(dto.WikiApiUrl, title, ctx.CancellationToken);
             if (string.IsNullOrWhiteSpace(text)) continue;
+            if (text.TrimStart().StartsWith("#REDIRECT", StringComparison.OrdinalIgnoreCase)) continue;
             await _pipeline.IndexArticleAsync(universe.Id, t,
                 $"{universe.WikiUrl}/{Uri.EscapeDataString(title)}", "other", text, ctx.CancellationToken);
             indexed++;

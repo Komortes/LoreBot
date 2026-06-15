@@ -62,12 +62,16 @@ public class ChatFunction
         }
 
         var sessionId = string.IsNullOrWhiteSpace(dto.SessionId) ? Guid.NewGuid().ToString() : dto.SessionId;
+        var history = dto.History
+            .Where(h => !string.IsNullOrWhiteSpace(h.Content))
+            .Select(h => (h.Role, h.Content))
+            .ToList();
         _logger.LogInformation("LoreBot.ChatRequest universe={Universe}", dto.Universe);
 
         ChatResult result;
         try
         {
-            result = await _chatService.ChatAsync(dto.Universe, dto.Message, sessionId, executionContext.CancellationToken);
+            result = await _chatService.ChatAsync(dto.Universe, dto.Message, sessionId, history, executionContext.CancellationToken);
         }
         catch (Exception ex)
         {
