@@ -67,14 +67,21 @@ export function ChatWindow({ universe }: { universe: string }) {
       </div>
 
       <form className="input-area" onSubmit={handleSubmit}>
+        <label className="sr-only" htmlFor="chat-question">Вопрос</label>
         <input
+          id="chat-question"
           className="chat-input"
           value={input}
           onChange={e => setInput(e.target.value)}
           placeholder="Задай вопрос о вселенной..."
           disabled={isLoading}
         />
-        <button type="submit" className="send-btn" disabled={isLoading || !input.trim()}>
+        <button
+          type="submit"
+          className="send-btn"
+          disabled={isLoading || !input.trim()}
+          aria-label="Отправить вопрос"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
             <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95 28.897 28.897 0 0 0 15.293-7.154.75.75 0 0 0 0-1.115A28.897 28.897 0 0 0 3.105 2.288Z" />
           </svg>

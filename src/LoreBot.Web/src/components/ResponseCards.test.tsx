@@ -6,7 +6,7 @@ describe('ResponseCards', () => {
   it('shows response type and confidence without cards', () => {
     render(<ResponseCards responseType="character" confidence={0.87} />)
 
-    expect(screen.getByText('Character')).toBeTruthy()
+    expect(screen.getByText('Персонаж')).toBeTruthy()
     expect(screen.getByText('87%')).toBeTruthy()
   })
 

@@ -1,5 +1,6 @@
 import type { Message, Source } from '../types'
 import { ResponseCards } from './ResponseCards'
+import { SourceCard } from './SourceCard'
 
 function safeUrl(url: string | undefined) {
   if (!url) return undefined
@@ -29,31 +30,12 @@ function AnnotatedText({ text, sources }: { text: string; sources?: Source[] }) 
             target="_blank"
             rel="noopener noreferrer"
             title={src?.title}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'monospace',
-              fontSize: '10px',
-              fontWeight: 700,
-              lineHeight: 1,
-              padding: '1px 5px',
-              borderRadius: '4px',
-              verticalAlign: 'super',
-              textDecoration: 'none',
-              background: 'rgba(79,70,229,.12)',
-              color: 'var(--indigo)',
-              border: '1px solid rgba(79,70,229,.25)',
-              marginLeft: '1px',
-              transition: 'background .15s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(79,70,229,.22)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(79,70,229,.12)')}
+            className="citation-link"
           >
             {match[1]}
           </a>
         ) : (
-          <span key={i} style={{ fontFamily: 'monospace', fontSize: '10px', color: 'var(--indigo)', verticalAlign: 'super' }}>
+          <span key={i} className="citation-fallback">
             {part}
           </span>
         )
@@ -76,7 +58,7 @@ export function MessageBubble({ message }: { message: Message }) {
   return (
     <div className="msg-row bot">
       <div className="bot-avatar">L</div>
-      <div style={{ minWidth: 0, maxWidth: '80%' }}>
+      <div className="message-stack">
         <div className="bubble bot">
           <AnnotatedText text={message.text} sources={message.sources} />
           <ResponseCards
@@ -85,6 +67,16 @@ export function MessageBubble({ message }: { message: Message }) {
             cards={message.cards}
           />
         </div>
+        {!!message.sources?.length && (
+          <div className="source-panel" aria-label="Источники ответа">
+            <div className="source-panel-title">Источники</div>
+            <div className="sources">
+              {message.sources.map((source, index) => (
+                <SourceCard key={`${source.title}-${index}`} source={source} index={index} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

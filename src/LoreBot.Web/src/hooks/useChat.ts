@@ -9,7 +9,9 @@ function extractAnswer(raw: string): string {
     try {
       const parsed = JSON.parse(unwrapped)
       if (typeof parsed.answer === 'string' && parsed.answer.trim()) return parsed.answer.trim()
-    } catch {}
+    } catch {
+      // Fall back to plain text when the model returns malformed JSON.
+    }
   }
   return t
 }
