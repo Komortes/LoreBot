@@ -102,7 +102,9 @@ var host = new HostBuilder()
         }
         else
         {
-            var openAiKey = string.IsNullOrWhiteSpace(loreBotOptions.OpenAiApiKey) ? "sk-placeholder" : loreBotOptions.OpenAiApiKey;
+            var openAiKey = string.IsNullOrWhiteSpace(loreBotOptions.OpenAiApiKey)
+                ? "placeholder-openai-key"
+                : loreBotOptions.OpenAiApiKey;
             chatClient = new OpenAIClient(openAiKey);
             chatModelName = loreBotOptions.ChatModel;
         }
