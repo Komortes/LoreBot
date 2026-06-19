@@ -11,6 +11,7 @@ Covers plan Task 46 (benchmark) and Task 45 Step 1 (deployment go/no-go).
 |---|---|---|
 | Embeddings | OpenAI `text-embedding-3-small` (1536-d) | local quantized gguf via LLamaSharp |
 | Vector store | PostgreSQL + pgvector (`VectorSearchService`) | static JSON artifact (`FileVectorSearchService`) |
+| Rate limit / cache | Postgres-backed stores | per-instance in-memory soft limit + no-op cache |
 | Chat | OpenAI / DeepSeek | DeepSeek (`deepseek-chat`) |
 | Recurring infra cost | Postgres + OpenAI usage | DeepSeek usage only |
 
@@ -93,10 +94,10 @@ Rationale (evidence available at time of writing):
 3. **Cold-start risk on Consumption.** Loading a ~300 MB model into a .NET isolated worker on the
    Consumption plan risks slow cold starts; this needs measurement (and likely Flex Consumption or a
    warmed instance) before it is a credible production path.
-4. **Stores still need Postgres.** Rate limiting (`RateLimitService`) and the response cache
-   (`CacheService`) are backed by `AppDbContext` (Postgres). The cheap-serverless profile only removes
-   the *embedding* + *vector-store* cost; it does not yet remove the Postgres dependency, so the
-   "no recurring infra" benefit is partial until those are moved to a file/in-memory store.
+4. **State is intentionally lightweight.** With `VECTOR_STORE_PROVIDER=file`, Functions now use
+   `InMemoryRateLimitService` and `NoOpCacheService`, so chat can run without Postgres. The tradeoff is
+   deliberate: rate limiting is per instance, cache hits are disabled, and production-grade distributed
+   throttling would need edge/API gateway support.
 
 The capability itself is implemented, tested, and demonstrable locally (provider wiring + file vector
 store + offline indexer + deterministic retrieval gate). That is the portfolio value; Azure packaging
@@ -107,7 +108,7 @@ is deferred, not abandoned.
 - Task 37 Bicep compiles (`az bicep build`) and `what-if` succeeds against a subscription.
 - Harness shows cold model load + first-token latency within an acceptable budget on the chosen plan.
 - Artifact + model packaging fits the chosen hosting size limit (see CI size checks below).
-- Rate-limit + cache stores have a serverless-friendly backing (or Postgres cost is accepted).
+- The per-instance soft limiter is acceptable for the expected traffic, or an edge/API gateway limit is configured.
 
 ### If/when `go`: implementation outline (Task 45 Steps 2–5)
 

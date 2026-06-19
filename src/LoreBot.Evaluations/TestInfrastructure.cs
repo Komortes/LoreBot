@@ -9,7 +9,8 @@ public static class TestInfrastructure
 
     private sealed class DeterministicChatService : IChatService
     {
-        public Task<ChatResult> ChatAsync(string universe, string message, string sessionId, CancellationToken ct = default)
+        public Task<ChatResult> ChatAsync(string universe, string message, string sessionId,
+            IReadOnlyList<(string Role, string Content)>? history = null, CancellationToken ct = default)
         {
             var lower = message.ToLowerInvariant();
             if (universe == "jojo" && lower.Contains("дио"))

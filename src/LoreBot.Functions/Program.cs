@@ -60,8 +60,12 @@ var host = new HostBuilder()
             AdminApiKey = config["ADMIN_API_KEY"] ?? "",
         };
 
-        services.AddDbContext<AppDbContext>(opt =>
-            opt.UseNpgsql(loreBotOptions.DatabaseConnectionString, n => n.UseVector()));
+        var usesPostgresVectorStore = loreBotOptions.VectorStoreProvider.Equals("postgres", StringComparison.OrdinalIgnoreCase);
+        if (usesPostgresVectorStore)
+        {
+            services.AddDbContext<AppDbContext>(opt =>
+                opt.UseNpgsql(loreBotOptions.DatabaseConnectionString, n => n.UseVector()));
+        }
 
         // Embeddings + vector store selected by the configured provider profile.
         services.AddRagProviders(loreBotOptions);
@@ -70,9 +74,18 @@ var host = new HostBuilder()
         services.AddScoped<IndexingPipeline>();
         services.AddHttpClient<WikiScraper>();
 
-        services.AddScoped<IRateLimitService>(sp =>
-            new RateLimitService(sp.GetRequiredService<AppDbContext>(), 10, 50, 200));
-        services.AddScoped<ICacheService, CacheService>();
+        if (usesPostgresVectorStore)
+        {
+            services.AddScoped<IRateLimitService>(sp =>
+                new RateLimitService(sp.GetRequiredService<AppDbContext>(), 10, 50, 200));
+            services.AddScoped<ICacheService, CacheService>();
+        }
+        else
+        {
+            // Cheap/serverless profile: soft per-instance guard, no database dependency.
+            services.AddSingleton<IRateLimitService>(_ => new InMemoryRateLimitService(10, 50, 200));
+            services.AddSingleton<ICacheService, NoOpCacheService>();
+        }
         services.AddSingleton<InputGuardRails>();
         services.AddSingleton<OutputGuardRails>();
 
