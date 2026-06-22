@@ -193,6 +193,10 @@ cd src/LoreBot.Web && npm install && npm run dev
 | `POST` | `/api/manage/index` | `x-admin-key` | Trigger wiki ingestion |
 | `GET` | `/api/health` | — | `{ status, database }` |
 
+With `VECTOR_STORE_PROVIDER=file`, `/api/chat` and `/api/health` work without Postgres.
+`/api/universes`, `/api/universes/{slug}/stats`, and `/api/manage/index` require the
+`postgres` profile because a static RAG artifact does not include mutable universe metadata.
+
 `/api/chat` supports multi-turn context via `history`:
 
 ```json

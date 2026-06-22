@@ -6,21 +6,21 @@ using LoreBot.Infrastructure.Ingestion;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace LoreBot.Functions.Functions;
 
 public class AdminFunction
 {
-    private readonly AppDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly WikiScraper _scraper;
-    private readonly IndexingPipeline _pipeline;
     private readonly LoreBotOptions _options;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public AdminFunction(AppDbContext db, WikiScraper scraper, IndexingPipeline pipeline, IOptions<LoreBotOptions> options)
+    public AdminFunction(IServiceScopeFactory scopeFactory, WikiScraper scraper, IOptions<LoreBotOptions> options)
     {
-        _db = db; _scraper = scraper; _pipeline = pipeline; _options = options.Value;
+        _scopeFactory = scopeFactory; _scraper = scraper; _options = options.Value;
     }
 
     public record IndexRequest(string Universe, string WikiApiUrl, int MaxPages = 50, string? StartFrom = null, List<string>? Titles = null);
@@ -34,6 +34,19 @@ public class AdminFunction
             || keys.FirstOrDefault() != _options.AdminApiKey
             || string.IsNullOrEmpty(_options.AdminApiKey))
             return req.CreateResponse(HttpStatusCode.Unauthorized);
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetService<AppDbContext>();
+        var pipeline = scope.ServiceProvider.GetService<IndexingPipeline>();
+        if (db is null || pipeline is null)
+        {
+            var unavailable = req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+            await unavailable.WriteAsJsonAsync(new
+            {
+                error = "Indexing is available only when VECTOR_STORE_PROVIDER=postgres."
+            });
+            return unavailable;
+        }
 
         IndexRequest? dto;
         try
@@ -52,7 +65,7 @@ public class AdminFunction
             return bad;
         }
 
-        var universe = await _db.Universes.FirstOrDefaultAsync(u => u.Slug == dto.Universe, ctx.CancellationToken);
+        var universe = await db.Universes.FirstOrDefaultAsync(u => u.Slug == dto.Universe, ctx.CancellationToken);
         if (universe is null)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -70,7 +83,7 @@ public class AdminFunction
             var (t, text) = await _scraper.GetPlainTextAsync(dto.WikiApiUrl, title, ctx.CancellationToken);
             if (string.IsNullOrWhiteSpace(text)) continue;
             if (text.TrimStart().StartsWith("#REDIRECT", StringComparison.OrdinalIgnoreCase)) continue;
-            await _pipeline.IndexArticleAsync(universe.Id, t,
+            await pipeline.IndexArticleAsync(universe.Id, t,
                 $"{universe.WikiUrl}/{Uri.EscapeDataString(title)}", "other", text, ctx.CancellationToken);
             indexed++;
         }
