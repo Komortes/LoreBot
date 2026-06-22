@@ -280,6 +280,10 @@ Bicep templates in `infra/` provision:
 
 > Azure deployment is not yet live. IaC exists, but the deployment path still needs subscription-level validation (`bicep build` / `what-if`) and real cheap-serverless benchmarks before using that profile in production.
 
+GitHub Actions keeps deployment disabled by default. To enable it, set the repository variable
+`ENABLE_AZURE_DEPLOY=true`, set `AZURE_FUNCTIONS_APP_NAME`, and configure the
+`AZURE_FUNCTIONS_PUBLISH_PROFILE` and `AZURE_SWA_TOKEN` repository secrets.
+
 ---
 
 ## Roadmap

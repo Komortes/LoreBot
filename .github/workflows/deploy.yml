@@ -25,7 +25,7 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Unit tests
-        run: dotnet test tests/LoreBot.Core.Tests tests/LoreBot.Infrastructure.Tests --no-build -c Release
+        run: dotnet test LoreBot.slnx --no-build -c Release
 
   build-frontend:
     name: Build Frontend
@@ -52,11 +52,14 @@ jobs:
       - name: Build
         run: cd src/LoreBot.Web && npm run build
 
+      - name: Dependency audit
+        run: cd src/LoreBot.Web && npm audit --audit-level=high
+
   deploy-functions:
     name: Deploy Azure Functions
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +74,7 @@ jobs:
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: lorebot-functions
+          app-name: ${{ vars.AZURE_FUNCTIONS_APP_NAME }}
           package: ./publish
           publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
 
@@ -79,7 +82,7 @@ jobs:
     name: Deploy Static Web App
     needs: build-frontend
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true'
     steps:
       - uses: actions/checkout@v4
 
