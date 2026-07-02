@@ -33,4 +33,26 @@ public class TextChunkerTests
         var chunks = chunker.Chunk("one two three four");
         Assert.True(chunks[0].TokenCount > 0);
     }
+
+    [Fact]
+    public void Chunk_TextWithNoWhitespace_StillSplitsIntoMultipleChunks()
+    {
+        // CJK text (and base64 blobs, minified text, etc.) can contain no space
+        // characters at all; the chunker must not collapse this into one giant chunk.
+        var noSpaceText = string.Concat(Enumerable.Repeat("四条家的血脉传承", 200));
+        var chunker = new TextChunker(maxTokens: 10, overlapTokens: 2);
+        var chunks = chunker.Chunk(noSpaceText);
+        Assert.True(chunks.Count > 1);
+        for (int i = 0; i < chunks.Count; i++)
+            Assert.Equal(i, chunks[i].Index);
+    }
+
+    [Fact]
+    public void Chunk_TabsAndNewlines_AreTreatedAsWordSeparators()
+    {
+        var chunker = new TextChunker(maxTokens: 512, overlapTokens: 64);
+        var chunks = chunker.Chunk("Dio\tBrando\nis a vampire.");
+        Assert.Single(chunks);
+        Assert.Equal("Dio Brando is a vampire.", chunks[0].Text);
+    }
 }

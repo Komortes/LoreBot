@@ -88,6 +88,7 @@ var host = new HostBuilder()
         }
         services.AddSingleton<InputGuardRails>();
         services.AddSingleton<OutputGuardRails>();
+        services.AddScoped<ChatRequestContext>();
 
         // Chat client: DeepSeek (OpenAI-compatible endpoint) or OpenAI, selected by LLM_PROVIDER.
         OpenAIClient chatClient;
@@ -127,7 +128,8 @@ var host = new HostBuilder()
             var inner = chatClient.GetChatClient(chatModelName).AsIChatClient();
             return inner.AsBuilder()
                 .UseFunctionInvocation()
-                .Use(next => new ObservabilityChatClient(next, "lorebot"))
+                .Use(next => new ObservabilityChatClient(
+                    next, () => sp.GetRequiredService<ChatRequestContext>().Universe ?? "unknown"))
                 .Use(next => new GuardRailsChatClient(
                     next,
                     sp.GetRequiredService<InputGuardRails>(),

@@ -1,4 +1,6 @@
 using LoreBot.Core.Abstractions;
+using LoreBot.Core.Configuration;
+using LoreBot.Infrastructure.Database;
 using Microsoft.Extensions.Logging;
 
 namespace LoreBot.Infrastructure.Services;
@@ -7,13 +9,19 @@ public sealed class LocalModelEmbeddingService : IEmbeddingService, IDisposable
 {
     private readonly ILocalEmbeddingModel _model;
     private readonly ILogger<LocalModelEmbeddingService> _logger;
+    private readonly bool _targetsPostgres;
 
+    // options is null for standalone callers (e.g. the Indexer CLI) that only ever build
+    // file-based artifacts and have no LoreBotOptions to resolve.
     public LocalModelEmbeddingService(
         ILocalEmbeddingModel model,
-        ILogger<LocalModelEmbeddingService> logger)
+        ILogger<LocalModelEmbeddingService> logger,
+        LoreBotOptions? options = null)
     {
         _model = model;
         _logger = logger;
+        _targetsPostgres = options is not null
+            && !options.VectorStoreProvider.Equals("file", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
@@ -58,6 +66,14 @@ public sealed class LocalModelEmbeddingService : IEmbeddingService, IDisposable
         {
             throw new InvalidOperationException(
                 $"Local embedding model returned dimension {vector.Length}; expected {_model.EmbeddingSize}.");
+        }
+
+        if (_targetsPostgres && _model.EmbeddingSize != AppDbContext.EmbeddingDimension)
+        {
+            throw new InvalidOperationException(
+                $"Local embedding model produces {_model.EmbeddingSize}-dimensional vectors, but "
+                + $"VECTOR_STORE_PROVIDER=postgres requires exactly {AppDbContext.EmbeddingDimension} dimensions. "
+                + "Use a model with that output size, or set VECTOR_STORE_PROVIDER=file.");
         }
 
         var magnitude = MathF.Sqrt(vector.Sum(value => value * value));

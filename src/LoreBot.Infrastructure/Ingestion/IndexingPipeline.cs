@@ -6,6 +6,10 @@ namespace LoreBot.Infrastructure.Ingestion;
 
 public class IndexingPipeline
 {
+    // Matches RagArtifactBuilder's batch size: keeps each embedding call within
+    // provider batch/token limits instead of sending an entire article's chunks at once.
+    private const int EmbeddingBatchSize = 64;
+
     private readonly AppDbContext _db;
     private readonly IEmbeddingService _embedder;
     private readonly TextChunker _chunker;
@@ -23,20 +27,24 @@ public class IndexingPipeline
         var chunks = _chunker.Chunk(text);
         if (chunks.Count == 0) return;
 
-        var embeddings = await _embedder.EmbedBatchAsync(chunks.Select(c => c.Text).ToList(), ct);
-        for (int i = 0; i < chunks.Count; i++)
+        for (var start = 0; start < chunks.Count; start += EmbeddingBatchSize)
         {
-            _db.Documents.Add(new Document
+            var batch = chunks.Skip(start).Take(EmbeddingBatchSize).ToList();
+            var embeddings = await _embedder.EmbedBatchAsync(batch.Select(c => c.Text).ToList(), ct);
+            for (int i = 0; i < batch.Count; i++)
             {
-                UniverseId = universeId,
-                Title = title,
-                Url = url,
-                Category = category,
-                ChunkText = chunks[i].Text,
-                ChunkIndex = chunks[i].Index,
-                TokenCount = chunks[i].TokenCount,
-                Embedding = embeddings[i],
-            });
+                _db.Documents.Add(new Document
+                {
+                    UniverseId = universeId,
+                    Title = title,
+                    Url = url,
+                    Category = category,
+                    ChunkText = batch[i].Text,
+                    ChunkIndex = batch[i].Index,
+                    TokenCount = batch[i].TokenCount,
+                    Embedding = embeddings[i],
+                });
+            }
         }
         await _db.SaveChangesAsync(ct);
     }

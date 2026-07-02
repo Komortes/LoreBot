@@ -13,12 +13,19 @@ public class TextChunker
         _overlapTokens = overlapTokens;
     }
 
+    // A hard ceiling on how long a single whitespace-delimited "word" can be before the
+    // chunker forces a split. Ordinary text never hits this; it exists so that text with
+    // no space characters at all (CJK/Korean prose, minified text, a base64 blob, one
+    // giant line) can't collapse the whole document into a single unbounded "word" that
+    // bypasses the max-token limit.
+    private const int MaxWordChars = 40;
+
     private static int EstimateTokens(string text) =>
-        (int)Math.Ceiling(text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length / 0.75);
+        (int)Math.Ceiling(Tokenize(text).Length / 0.75);
 
     public IReadOnlyList<TextChunk> Chunk(string text)
     {
-        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var words = Tokenize(text);
         if (words.Length == 0) return Array.Empty<TextChunk>();
 
         int wordsPerChunk = Math.Max(1, (int)(_maxTokens * 0.75));
@@ -36,5 +43,26 @@ public class TextChunker
             if (start + wordsPerChunk >= words.Length) break;
         }
         return chunks;
+    }
+
+    // Splits on any Unicode whitespace (not just the literal space character), then breaks
+    // up any resulting token longer than MaxWordChars into fixed-size pieces.
+    private static string[] Tokenize(string text)
+    {
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.All(w => w.Length <= MaxWordChars)) return words;
+
+        var expanded = new List<string>(words.Length);
+        foreach (var word in words)
+        {
+            if (word.Length <= MaxWordChars)
+            {
+                expanded.Add(word);
+                continue;
+            }
+            for (int i = 0; i < word.Length; i += MaxWordChars)
+                expanded.Add(word.Substring(i, Math.Min(MaxWordChars, word.Length - i)));
+        }
+        return expanded.ToArray();
     }
 }

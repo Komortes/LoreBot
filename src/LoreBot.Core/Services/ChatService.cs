@@ -57,7 +57,6 @@ public class ChatService : IChatService
             .Where(c => c.Similarity >= MinSimilarity)
             .Take(ContextK)
             .ToList();
-        if (filtered.Count == 0) filtered = retrieved.Take(ContextK).ToList();
 
         if (filtered.Count == 0)
         {
@@ -80,13 +79,15 @@ public class ChatService : IChatService
         {
             foreach (var (role, content) in history.TakeLast(6))
                 messages.Add(new ChatMessage(
-                    role == "assistant" ? ChatRole.Assistant : ChatRole.User,
+                    string.Equals(role, "assistant", StringComparison.OrdinalIgnoreCase) ? ChatRole.Assistant : ChatRole.User,
                     content));
         }
 
         messages.Add(new(ChatRole.User, message));
 
         var chatOptions = new ChatOptions { MaxOutputTokens = 800 };
+        if (_tools is { Count: > 0 })
+            chatOptions.Tools = _tools.ToList();
         var response = await _chat.GetResponseAsync(messages, chatOptions, ct);
         var tokens = (int)((response.Usage?.InputTokenCount ?? 0) + (response.Usage?.OutputTokenCount ?? 0));
         var parsed = ParseModelResponse(response.Text);

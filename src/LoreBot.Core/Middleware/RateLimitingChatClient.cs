@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using LoreBot.Core.Abstractions;
 using Microsoft.Extensions.AI;
 
@@ -25,5 +26,23 @@ public class RateLimitingChatClient : DelegatingChatClient
         if (!decision.Allowed)
             return new ChatResponse(new ChatMessage(ChatRole.Assistant, DegradedMessage));
         return await base.GetResponseAsync(messages, options, cancellationToken);
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var decision = await _limiter.CheckAndIncrementAsync(_identifierProvider(), cancellationToken);
+        if (!decision.Allowed)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, DegradedMessage);
+            yield break;
+        }
+
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken)
+            .WithCancellation(cancellationToken))
+        {
+            yield return update;
+        }
     }
 }

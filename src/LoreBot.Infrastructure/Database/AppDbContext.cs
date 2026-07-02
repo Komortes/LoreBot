@@ -7,6 +7,10 @@ namespace LoreBot.Infrastructure.Database;
 
 public class AppDbContext : DbContext
 {
+    /// <summary>Fixed dimension of the Postgres <c>vector</c> columns; any embedding provider paired
+    /// with VECTOR_STORE_PROVIDER=postgres must produce vectors of exactly this size.</summary>
+    public const int EmbeddingDimension = 1536;
+
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Universe> Universes => Set<Universe>();
@@ -35,7 +39,7 @@ public class AppDbContext : DbContext
         {
             e.ToTable("documents");
             var p = e.Property(d => d.Embedding);
-            if (isPostgres) p.HasConversion(toVector).HasColumnType("vector(1536)");
+            if (isPostgres) p.HasConversion(toVector).HasColumnType($"vector({EmbeddingDimension})");
             e.HasIndex(d => d.UniverseId);
             e.HasIndex(d => new { d.UniverseId, d.Category });
             e.HasOne(d => d.Universe).WithMany(u => u.Documents)
@@ -52,7 +56,10 @@ public class AppDbContext : DbContext
         {
             e.ToTable("response_cache");
             var p = e.Property(r => r.QuestionVector);
-            if (isPostgres) p.HasConversion(toVector).HasColumnType("vector(1536)");
+            if (isPostgres) p.HasConversion(toVector).HasColumnType($"vector({EmbeddingDimension})");
+            // Covers both CacheService.TryGetAsync (filters by UniverseId) and
+            // SetAsync's exact-duplicate lookup (UniverseId, QuestionHash).
+            e.HasIndex(r => new { r.UniverseId, r.QuestionHash });
         });
 
         b.Entity<EvaluationLog>(e => e.ToTable("evaluation_logs"));

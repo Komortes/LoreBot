@@ -5,8 +5,22 @@ namespace LoreBot.Infrastructure.Ingestion;
 
 public class WikiScraper
 {
+    private const int MaxAttempts = 3;
+    private static readonly TimeSpan[] DefaultRetryDelays = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3)];
+
     private readonly HttpClient _http;
-    public WikiScraper(HttpClient http) => _http = http;
+    private readonly TimeSpan[] _retryDelays;
+
+    public WikiScraper(HttpClient http) : this(http, DefaultRetryDelays)
+    {
+    }
+
+    // Seam so callers (and tests) can override the retry backoff without real delays.
+    public WikiScraper(HttpClient http, TimeSpan[] retryDelays)
+    {
+        _http = http;
+        _retryDelays = retryDelays;
+    }
 
     public async Task<List<string>> ListAllPagesAsync(string apiUrl, string? startFrom = null, CancellationToken ct = default)
     {
@@ -20,7 +34,7 @@ public class WikiScraper
                 url += firstRequest
                     ? $"&apfrom={Uri.EscapeDataString(continueToken)}"
                     : $"&apcontinue={Uri.EscapeDataString(continueToken)}";
-            using var doc = JsonDocument.Parse(await _http.GetStringAsync(url, ct));
+            using var doc = JsonDocument.Parse(await GetStringWithRetryAsync(url, ct));
             var root = doc.RootElement;
             foreach (var p in root.GetProperty("query").GetProperty("allpages").EnumerateArray())
                 titles.Add(p.GetProperty("title").GetString()!);
@@ -34,7 +48,7 @@ public class WikiScraper
     public async Task<(string Title, string Text)> GetPlainTextAsync(string apiUrl, string title, CancellationToken ct = default)
     {
         var url = $"{apiUrl}?action=parse&page={Uri.EscapeDataString(title)}&prop=wikitext&format=json";
-        using var doc = JsonDocument.Parse(await _http.GetStringAsync(url, ct));
+        using var doc = JsonDocument.Parse(await GetStringWithRetryAsync(url, ct));
         var root = doc.RootElement;
         if (root.TryGetProperty("error", out _))
             return (title, "");
@@ -88,6 +102,26 @@ public class WikiScraper
 
         text = extractElement.GetString() ?? "";
         return true;
+    }
+
+    // Retries transient network failures (timeouts, connection resets) with a short backoff,
+    // so one flaky request during a long crawl doesn't abort the whole run. Caller cancellation
+    // (ct) is never retried.
+    private async Task<string> GetStringWithRetryAsync(string url, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await _http.GetStringAsync(url, ct);
+            }
+            catch (Exception ex) when (attempt < MaxAttempts
+                && !ct.IsCancellationRequested
+                && ex is HttpRequestException or TaskCanceledException or IOException)
+            {
+                await Task.Delay(_retryDelays[attempt - 1], ct);
+            }
+        }
     }
 
     public static string CleanWikitext(string raw)

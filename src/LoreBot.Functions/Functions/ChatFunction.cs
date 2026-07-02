@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using LoreBot.Core.Abstractions;
 using LoreBot.Core.Models;
+using LoreBot.Functions.Middleware;
 using LoreBot.Functions.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -13,13 +14,16 @@ public class ChatFunction
 {
     private readonly IChatService _chatService;
     private readonly IRateLimitService _rateLimit;
+    private readonly ChatRequestContext _requestContext;
     private readonly ILogger<ChatFunction> _logger;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public ChatFunction(IChatService chatService, IRateLimitService rateLimit, ILogger<ChatFunction> logger)
+    public ChatFunction(
+        IChatService chatService, IRateLimitService rateLimit, ChatRequestContext requestContext, ILogger<ChatFunction> logger)
     {
         _chatService = chatService;
         _rateLimit = rateLimit;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -29,9 +33,17 @@ public class ChatFunction
         FunctionContext executionContext)
     {
         var body = await req.ReadAsStringAsync();
-        var dto = string.IsNullOrWhiteSpace(body)
-            ? null
-            : JsonSerializer.Deserialize<ChatRequestDto>(body, Json);
+        ChatRequestDto? dto;
+        try
+        {
+            dto = string.IsNullOrWhiteSpace(body)
+                ? null
+                : JsonSerializer.Deserialize<ChatRequestDto>(body, Json);
+        }
+        catch (JsonException)
+        {
+            dto = null;
+        }
 
         if (dto is null || string.IsNullOrWhiteSpace(dto.Message) || string.IsNullOrWhiteSpace(dto.Universe))
         {
@@ -40,8 +52,10 @@ public class ChatFunction
             return bad;
         }
 
+        // Azure's front-end proxy appends the true client IP as the last hop; any earlier
+        // entries are attacker-suppliable, so trust only the last non-empty segment.
         var clientIp = req.Headers.TryGetValues("X-Forwarded-For", out var fwd)
-            ? fwd.First().Split(',')[0].Trim()
+            ? fwd.First().Split(',').Select(s => s.Trim()).LastOrDefault(s => !string.IsNullOrEmpty(s)) ?? "unknown"
             : "unknown";
         var decision = await _rateLimit.CheckAndIncrementAsync(clientIp, executionContext.CancellationToken);
         if (!decision.Allowed)
@@ -61,8 +75,9 @@ public class ChatFunction
             return limited;
         }
 
+        _requestContext.Universe = dto.Universe;
         var sessionId = string.IsNullOrWhiteSpace(dto.SessionId) ? Guid.NewGuid().ToString() : dto.SessionId;
-        var history = dto.History
+        var history = (dto.History ?? [])
             .Where(h => !string.IsNullOrWhiteSpace(h.Content))
             .Select(h => (h.Role, h.Content))
             .ToList();

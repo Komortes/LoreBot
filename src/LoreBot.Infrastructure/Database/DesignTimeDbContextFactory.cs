@@ -8,7 +8,9 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     public AppDbContext CreateDbContext(string[] args)
     {
         var conn = Environment.GetEnvironmentVariable("DATABASE_CONNECTION_STRING")
-            ?? "Host=localhost;Database=lorebot;Username=postgres;Password=postgres";
+            ?? throw new InvalidOperationException(
+                "DATABASE_CONNECTION_STRING must be set to run EF Core design-time commands " +
+                "(e.g. dotnet ef migrations add/update). See docker-compose.yml for local dev credentials.");
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(conn, o => o.UseVector())
             .Options;

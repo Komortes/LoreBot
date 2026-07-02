@@ -28,6 +28,7 @@ public static class RagProviderRegistration
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(options);
 
+        services.AddSingleton(options);
         AddEmbeddingProvider(services, options);
         AddVectorStoreProvider(services, options);
         return services;

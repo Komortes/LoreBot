@@ -7,11 +7,13 @@ export async function postChat(
   message: string,
   sessionId: string,
   history: { role: string; content: string }[] = [],
+  signal?: AbortSignal,
 ): Promise<ChatResponse> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ universe, message, sessionId, history }),
+    signal,
   })
   if (!res.ok) throw new Error(`Chat request failed: ${res.status}`)
   return res.json()

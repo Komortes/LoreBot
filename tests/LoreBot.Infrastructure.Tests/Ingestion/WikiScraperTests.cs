@@ -7,6 +7,9 @@ namespace LoreBot.Infrastructure.Tests.Ingestion;
 
 public class WikiScraperTests
 {
+    private static readonly TimeSpan[] NoDelay = [TimeSpan.Zero, TimeSpan.Zero];
+
+
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Queue<string> _responses;
@@ -16,6 +19,43 @@ public class WikiScraperTests
             {
                 Content = new StringContent(_responses.Dequeue(), Encoding.UTF8, "application/json")
             });
+    }
+
+    private sealed class FlakyThenOkHandler : HttpMessageHandler
+    {
+        private readonly string _response;
+        private int _remainingFailures;
+        public int Attempts { get; private set; }
+
+        public FlakyThenOkHandler(string response, int failuresBeforeSuccess)
+        {
+            _response = response;
+            _remainingFailures = failuresBeforeSuccess;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Attempts++;
+            if (_remainingFailures > 0)
+            {
+                _remainingFailures--;
+                throw new HttpRequestException("simulated transient network failure");
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_response, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class AlwaysFailsHandler : HttpMessageHandler
+    {
+        public int Attempts { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Attempts++;
+            throw new HttpRequestException("simulated persistent network failure");
+        }
     }
 
     [Fact]
@@ -40,5 +80,31 @@ public class WikiScraperTests
         Assert.DoesNotContain("[[", text);
         Assert.DoesNotContain("==", text);
         Assert.Contains("vampire", text);
+    }
+
+    [Fact]
+    public async Task GetPlainTextAsync_TransientNetworkFailure_RetriesAndSucceeds()
+    {
+        const string json = """{"query":{"pages":{"1":{"title":"Dio Brando","extract":"Dio Brando is a vampire."}}}}""";
+        var handler = new FlakyThenOkHandler(json, failuresBeforeSuccess: 1);
+        var scraper = new WikiScraper(new HttpClient(handler), NoDelay);
+
+        var (title, text) = await scraper.GetPlainTextAsync("https://jojo.fandom.com/api.php", "Dio Brando");
+
+        Assert.Equal(2, handler.Attempts);
+        Assert.Equal("Dio Brando", title);
+        Assert.Contains("vampire", text);
+    }
+
+    [Fact]
+    public async Task GetPlainTextAsync_PersistentNetworkFailure_GivesUpAfterMaxAttempts()
+    {
+        var handler = new AlwaysFailsHandler();
+        var scraper = new WikiScraper(new HttpClient(handler), NoDelay);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => scraper.GetPlainTextAsync("https://jojo.fandom.com/api.php", "Dio Brando"));
+
+        Assert.Equal(3, handler.Attempts);
     }
 }

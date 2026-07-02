@@ -1,3 +1,4 @@
+using LoreBot.Core.Configuration;
 using LoreBot.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -48,6 +49,31 @@ public class LocalModelEmbeddingServiceTests
         var vectors = await service.EmbedBatchAsync([]);
 
         Assert.Empty(vectors);
+    }
+
+    [Fact]
+    public async Task EmbedAsync_ModelDimensionMismatchesPostgresColumn_ThrowsControlledError()
+    {
+        var options = new LoreBotOptions { VectorStoreProvider = "postgres" };
+        using var service = new LocalModelEmbeddingService(
+            new FakeLocalEmbeddingModel(), NullLogger<LocalModelEmbeddingService>.Instance, options);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.EmbedAsync("Dio Brando"));
+
+        Assert.Contains("postgres", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmbedAsync_FileVectorStore_SkipsPostgresDimensionCheck()
+    {
+        var options = new LoreBotOptions { VectorStoreProvider = "file" };
+        using var service = new LocalModelEmbeddingService(
+            new FakeLocalEmbeddingModel(), NullLogger<LocalModelEmbeddingService>.Instance, options);
+
+        var vector = await service.EmbedAsync("Dio Brando");
+
+        Assert.Equal(3, vector.Length);
     }
 
     private static LocalModelEmbeddingService BuildService() =>

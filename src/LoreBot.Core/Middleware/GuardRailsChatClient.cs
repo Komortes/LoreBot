@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using LoreBot.Core.GuardRails;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -37,5 +39,30 @@ public class GuardRailsChatClient : DelegatingChatClient
             _logger.LogWarning("LoreBot.OutputFlagged disclaimer or missing citation");
 
         return response;
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User);
+        if (userMessage is not null &&
+            (_input.IsJailbreakAttempt(userMessage.Text) || _input.IsNsfw(userMessage.Text)))
+        {
+            _logger.LogWarning("LoreBot.GuardRailBlocked input flagged");
+            yield return new ChatResponseUpdate(ChatRole.Assistant, BlockedMessage);
+            yield break;
+        }
+
+        var text = new StringBuilder();
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken)
+            .WithCancellation(cancellationToken))
+        {
+            text.Append(update.Text);
+            yield return update;
+        }
+
+        if (_output.IsModelDisclaimer(text.ToString()) || !_output.HasCitation(text.ToString()))
+            _logger.LogWarning("LoreBot.OutputFlagged disclaimer or missing citation");
     }
 }

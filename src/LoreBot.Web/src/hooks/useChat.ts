@@ -25,18 +25,29 @@ function getSessionId(): string {
 
 export function useChat(universe: string) {
   const [messages, setMessages] = useState<Message[]>([])
-  // Reset history when universe changes
-  const prevUniverse = useRef(universe)
-  if (prevUniverse.current !== universe) {
-    prevUniverse.current = universe
-    setMessages([])
-  }
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sessionId = useRef(getSessionId())
+  const activeRequest = useRef<AbortController | null>(null)
+
+  // Reset history when universe changes, and cancel any in-flight request for the
+  // previous universe so its response can't land in the new universe's message list.
+  const prevUniverse = useRef(universe)
+  if (prevUniverse.current !== universe) {
+    prevUniverse.current = universe
+    activeRequest.current?.abort()
+    activeRequest.current = null
+    setMessages([])
+    setIsLoading(false)
+    setError(null)
+  }
 
   async function sendMessage(text: string) {
     if (!text.trim()) return
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
+
     setError(null)
     setIsLoading(true)
 
@@ -48,7 +59,8 @@ export function useChat(universe: string) {
 
     setMessages(prev => [...prev, { role: 'user', text }])
     try {
-      const res = await postChat(universe, text, sessionId.current, history)
+      const res = await postChat(universe, text, sessionId.current, history, controller.signal)
+      if (activeRequest.current !== controller) return // superseded by a newer request or universe switch
       setMessages(prev => [...prev, {
         role: 'assistant',
         text: extractAnswer(res.answer),
@@ -58,9 +70,10 @@ export function useChat(universe: string) {
         cards: res.cards,
       }])
     } catch (e) {
+      if (controller.signal.aborted) return
       setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
-      setIsLoading(false)
+      if (activeRequest.current === controller) setIsLoading(false)
     }
   }
 

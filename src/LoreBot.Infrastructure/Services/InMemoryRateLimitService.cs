@@ -41,16 +41,35 @@ public sealed class InMemoryRateLimitService : IRateLimitService
         yield return ("day", now.Date, _perDay);
     }
 
+    // Each window type expires on its own cadence, not just at day rollover: a minute-window
+    // entry is stale as soon as the clock moves past that minute. Without this, minute/hour
+    // buckets from earlier today (there's a fresh one per identifier per minute/hour) would
+    // never be evicted until the following day, growing the dictionary unbounded.
     private void RemoveExpired(DateTime now)
     {
+        var minuteFloor = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+        var hourFloor = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc);
         var dayFloor = now.Date;
+
         foreach (var key in _requests.Keys)
         {
-            var startIndex = key.LastIndexOf('|');
-            if (startIndex < 0) continue;
+            var lastPipe = key.LastIndexOf('|');
+            if (lastPipe < 0) continue;
+            var typePipe = key.LastIndexOf('|', lastPipe - 1 < 0 ? 0 : lastPipe - 1);
+            if (typePipe < 0 || typePipe >= lastPipe) continue;
 
-            var startText = key[(startIndex + 1)..];
-            if (DateTime.TryParse(startText, out var start) && start < dayFloor)
+            var type = key[(typePipe + 1)..lastPipe];
+            var startText = key[(lastPipe + 1)..];
+            if (!DateTime.TryParse(startText, out var start)) continue;
+
+            var expired = type switch
+            {
+                "minute" => start < minuteFloor,
+                "hour" => start < hourFloor,
+                "day" => start < dayFloor,
+                _ => start < dayFloor
+            };
+            if (expired)
             {
                 _requests.TryRemove(key, out _);
             }

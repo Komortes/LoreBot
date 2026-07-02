@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 
 namespace LoreBot.Functions.Middleware;
 
-public sealed class ObservabilityChatClient(IChatClient inner, string universe) : DelegatingChatClient(inner)
+public sealed class ObservabilityChatClient(IChatClient inner, Func<string> universeProvider) : DelegatingChatClient(inner)
 {
     private static readonly ActivitySource Source = new("LoreBot");
 
@@ -16,7 +16,7 @@ public sealed class ObservabilityChatClient(IChatClient inner, string universe) 
             ? sid?.ToString() : null;
 
         using var activity = Source.StartActivity("lorebot.chat.request", ActivityKind.Internal);
-        activity?.SetTag("universe.name", universe);
+        activity?.SetTag("universe.name", universeProvider());
         if (sessionId is not null) activity?.SetTag("user.session_id", sessionId);
 
         var sw = Stopwatch.StartNew();

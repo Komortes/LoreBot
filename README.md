@@ -138,6 +138,7 @@ docker compose up -d postgres
 ### 2. Apply migrations
 
 ```bash
+export DATABASE_CONNECTION_STRING="Host=localhost;Database=lorebot;Username=postgres;Password=postgres"
 dotnet ef database update --project src/LoreBot.Infrastructure \
   --startup-project src/LoreBot.Functions
 ```
